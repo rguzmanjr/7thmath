@@ -1,0 +1,860 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mini Golf</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{ --paper:#07120E; --panel:#0F1F19; --panel-2:#173027; --text:#F2FBF6; --muted:#9DB8AB; --border:#284438; --accent:#5CF2B0;
+  --mint:#5CF2B0; --coral:#FF8466; --lilac:#B9A4FF; --cream:#EADBB6;
+  --c-line:#FF4B4B; --c-m:#FFC82E; --c-b:#FF3DB4; --c-pt:#FFF04D; --c-ans:#D9A6FF; --c-x:#2DE2C8; --ok:#4ADE80; --no:#FF7A7A;
+  --display:'Fredoka','Inter',system-ui,sans-serif; --body:'Inter',system-ui,sans-serif;
+  --sz-mark:#5CF2B0; --sz-ink:#9DB8AB; }
+*{ box-sizing:border-box; }
+html,body{ margin:0; height:100%; background:var(--paper); overflow:hidden; }
+body{ color:var(--text); font-family:var(--body); -webkit-user-select:none; user-select:none; touch-action:manipulation; }
+button{ font:inherit; color:inherit; cursor:pointer; border:0; background:none; -webkit-tap-highlight-color:transparent; }
+button:focus-visible{ outline:4px solid var(--accent); outline-offset:3px; }
+button:disabled{ cursor:default; }
+[hidden]{ display:none !important; }
+#stage{ position:absolute; left:0; top:0; width:1920px; height:1080px; transform-origin:0 0; padding:18px 28px 20px; display:grid; grid-template-rows:84px minmax(0,1fr); gap:16px;
+  background:radial-gradient(700px 360px at 78% 4%, rgba(92,242,176,.08), transparent 70%), radial-gradient(520px 300px at 6% 100%, rgba(255,132,102,.07), transparent 70%), var(--paper); }
+
+/* top bar: a row of tee markers */
+.mg-top{ display:flex; align-items:center; gap:14px; white-space:nowrap; }
+.mg-brand{ display:flex; flex-direction:column; gap:5px; margin-right:10px; }
+.mg-logo{ margin:0; display:flex; align-items:center; gap:14px; font:700 54px/1 var(--display); letter-spacing:.01em; }
+.mg-logo b{ color:var(--mint); font-weight:700; } .mg-logo i{ color:var(--coral); font-style:normal; }
+.mg-flag{ position:relative; width:26px; height:50px; flex:none; }
+.mg-flag::before{ content:''; position:absolute; left:3px; top:0; width:4px; height:50px; border-radius:2px; background:var(--cream); }
+.mg-flag::after{ content:''; position:absolute; left:7px; top:2px; border-left:22px solid var(--coral); border-top:10px solid transparent; border-bottom:10px solid transparent; }
+.mg-sp{ flex:1; }
+.mg-chip{ height:76px; min-width:150px; padding:8px 22px 8px 20px; border-radius:38px 14px 14px 38px; background:var(--panel); border:3px solid var(--border); border-left:12px solid var(--c,var(--border)); display:flex; flex-direction:column; justify-content:center; }
+.mg-chip .l{ font:800 22px/1 var(--body); letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }
+.mg-chip .v{ font:600 38px/1.1 var(--display); font-variant-numeric:tabular-nums; }
+#mg-timerchip{ --c:var(--cream); min-width:190px; } #mg-timerchip .v{ font-size:44px; }
+#mg-scorechip{ --c:var(--lilac); } #mg-ballchip{ --c:#fff; } #mg-cashchip{ --c:var(--mint); } #mg-streakchip{ --c:var(--coral); }
+#mg-ballchip .v{ color:#fff; } #mg-cashchip .v{ color:var(--mint); } #mg-streakchip .v{ color:var(--coral); }
+#mg-ballchip.empty{ border-color:var(--no); animation:mgPulse 1s infinite; }
+@keyframes mgPulse{ 50%{ background:color-mix(in srgb,var(--no) 25%,var(--panel)); } }
+#mg-timerchip.low{ border-color:var(--no); } #mg-timerchip.low .v{ color:var(--no); }
+.mg-shopbtn{ height:76px; padding:0 32px; border-radius:38px; background:var(--mint); color:#062016; font:700 32px/1 var(--display); box-shadow:0 6px 0 #2a9c6c; }
+
+/* main: questions on the left, the course on the right */
+#mg-main{ display:grid; grid-template-columns:minmax(0,1fr) 1060px; gap:20px; min-height:0; }
+.mg-right{ display:flex; flex-direction:column; gap:12px; min-height:0; }
+.mg-course{ position:relative; flex:none; width:1060px; height:842px; border-radius:26px; overflow:hidden; border:3px solid #2C4A3D; background:#07120D; box-shadow:0 0 0 6px #0C1A14, 0 22px 50px rgba(0,0,0,.45); }
+.mg-course.final{ animation:mgFinal .7s infinite alternate; } @keyframes mgFinal{ to{ border-color:var(--coral); box-shadow:0 0 0 6px #0C1A14, 0 0 40px var(--coral); } }
+#mg-canvas{ position:absolute; left:0; top:0; width:1054px; height:836px; cursor:crosshair; touch-action:none; }
+.mg-buffs{ position:absolute; left:18px; bottom:16px; display:flex; gap:10px; pointer-events:none; }
+.mg-buff{ padding:10px 18px; border-radius:999px; background:rgba(6,14,10,.85); border:2px solid var(--mint); font:800 24px/1 var(--body); }
+
+/* the scorecard under the course */
+.mg-card{ flex:1; min-height:0; display:flex; align-items:center; gap:12px; padding:6px 8px 6px 18px; border-radius:22px; background:var(--cream); color:#1C2A22; box-shadow:inset 0 -5px 0 #CDBB92; }
+.mg-nine{ font:700 20px/1.05 var(--display); letter-spacing:.06em; color:#5B6B5F; width:66px; flex:none; }
+.mg-cells{ display:flex; gap:6px; flex:none; }
+.mg-cell{ width:50px; height:72px; border-radius:12px; border:2px solid #C9B78E; background:#F6EDD6; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px; }
+.mg-cell .hn{ font:800 16px/1 var(--body); color:#7A7A6A; } .mg-cell .st{ font:700 32px/1 var(--display); color:#1C2A22; }
+.mg-cell.cur{ border:3px solid #1C2A22; background:#fff; } .mg-cell.under .st{ color:#0F8A55; } .mg-cell.over .st{ color:#C2452A; }
+.mg-cell.under{ background:#DDF5E6; } .mg-cell.over{ background:#F8DCD3; }
+.mg-holeinfo{ flex:1; min-width:0; display:flex; flex-direction:column; gap:6px; }
+.mg-holeinfo b{ font:700 28px/1 var(--display); } .mg-holeinfo span{ font:700 21px/1.1 var(--body); color:#5B6B5F; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mg-putt{ flex:none; height:72px; padding:0 26px; border-radius:36px; background:#0F2A1F; color:var(--mint); font:700 30px/1 var(--display); box-shadow:0 5px 0 #000; }
+.mg-putt:disabled{ background:#D7C8A2; color:#8E8366; box-shadow:none; }
+.mg-putt.ready{ animation:mgReady 1.2s infinite; } @keyframes mgReady{ 50%{ box-shadow:0 5px 0 #000, 0 0 0 6px rgba(15,42,31,.25); } }
+
+/* slope shot band over the top of the course */
+.mg-ss{ position:absolute; left:16px; right:16px; top:12px; z-index:4; padding:12px 18px 14px; border-radius:20px; background:rgba(6,14,10,.93); border:3px solid var(--c-m); text-align:center; }
+.mg-sshead{ font:700 26px/1 var(--display); color:var(--c-m); letter-spacing:.04em; }
+.mg-ssq{ font:800 30px/1.2 var(--body); margin-top:8px; }
+.mg-sschoices{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:12px; }
+.mg-ssb{ min-height:76px; display:flex; align-items:center; justify-content:center; gap:14px; border-radius:18px; background:var(--panel-2); border:3px solid var(--border); font:800 36px/1 var(--body); color:var(--c-m); }
+.mg-ssb .k{ width:44px; height:44px; border-radius:50%; display:grid; place-items:center; background:#fff; color:#0F2A1F; font:700 24px/1 var(--display); flex:none; }
+.mg-ssb:not(:disabled):hover{ border-color:var(--c-m); }
+.mg-ssb.right{ border-color:var(--ok); background:color-mix(in srgb,var(--ok) 22%,var(--panel-2)); } .mg-ssb.wrong{ border-color:var(--no); background:color-mix(in srgb,var(--no) 20%,var(--panel-2)); }
+.mg-ssb:disabled:not(.right):not(.wrong){ opacity:.5; }
+.mg-ssmsg{ font:700 27px/1.3 var(--body); color:var(--muted); margin-top:10px; min-height:35px; }
+.mg-ssmsg.ok{ color:var(--ok); } .mg-ssmsg.bad{ color:var(--text); } .mg-ssmsg:empty{ display:none; }
+.mg-ss.done .mg-ssq, .mg-ss.done .mg-sschoices{ display:none; }
+
+/* question panel: a golf ball's dimples in the background */
+.mg-q{ min-width:0; min-height:0; border-radius:26px; padding:20px 24px; display:flex; flex-direction:column; gap:12px; position:relative; border:3px solid var(--border);
+  background:radial-gradient(circle at 6px 6px, rgba(255,255,255,.035) 3px, transparent 4px) 0 0/22px 22px, linear-gradient(180deg,#11231C,#0C1914); }
+.mg-q.need{ border-color:var(--mint); box-shadow:0 0 0 4px rgba(92,242,176,.25), 0 0 40px rgba(92,242,176,.25); }
+.mg-q.nudge{ animation:mgNudge .5s 2; } @keyframes mgNudge{ 25%{ transform:translateX(-10px); } 75%{ transform:translateX(10px); } }
+.mg-q > *{ flex:none; }
+.mg-qhead{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.mg-tag{ padding:10px 20px 10px 16px; border-radius:8px 999px 999px 8px; background:var(--mint); color:#062016; font:700 24px/1 var(--display); letter-spacing:.03em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:420px; }
+.mg-reward{ font:700 26px/1 var(--display); color:var(--mint); white-space:nowrap; }
+.mg-prompt{ font:700 36px/1.3 var(--body); min-height:96px; }
+.mg-q.vis .mg-prompt{ min-height:0; }
+#mg-body{ display:flex; flex-direction:column; gap:12px; min-width:0; }
+.mg-q.vis #mg-body{ flex-direction:row; align-items:flex-start; gap:18px; }
+.mg-q.vis .mg-choices{ flex:1; min-width:0; }
+.mg-graph{ display:block; flex:none; border-radius:16px; background:#0B1712; border:2px solid var(--border); }
+.mg-eq{ white-space:nowrap; font-weight:800; }
+.c-m{ color:var(--c-m); } .c-pt{ color:var(--c-pt); } .c-b{ color:var(--c-b); } .c-x{ color:var(--c-x); } .c-ans{ color:var(--c-ans); }
+.mg-fr{ display:inline-flex; flex-direction:column; vertical-align:middle; text-align:center; font-size:.78em; line-height:1.05; margin:0 .08em; }
+.mg-fr span:first-child{ border-bottom:.08em solid currentColor; padding:0 .12em; }
+.mg-choices{ display:flex; flex-direction:column; gap:10px; }
+.mg-ch{ min-height:76px; display:flex; align-items:center; gap:18px; padding:8px 18px; border-radius:38px 20px 20px 38px; background:var(--panel-2); border:3px solid var(--border); text-align:left; font:800 36px/1.15 var(--body); }
+.mg-ch .k{ flex:none; width:54px; height:54px; border-radius:50%; display:grid; place-items:center; color:#0F2A1F; font:700 28px/1 var(--display);
+  background:radial-gradient(circle at 35% 30%, #fff 0 40%, #DDE6E0 75%, #B9C6BE 100%); box-shadow:inset -3px -4px 0 rgba(0,0,0,.12); }
+.mg-ch:not(:disabled):hover{ border-color:var(--mint); }
+.mg-ch.right{ border-color:var(--ok); background:color-mix(in srgb,var(--ok) 20%,var(--panel-2)); }
+.mg-ch.wrong{ border-color:var(--no); background:color-mix(in srgb,var(--no) 18%,var(--panel-2)); }
+.mg-ch:disabled:not(.right):not(.wrong){ opacity:.55; }
+.mg-fb{ min-height:150px; border-radius:20px; padding:16px 20px; background:#08130F; border:2px dashed var(--border); font:600 28px/1.28 var(--body); color:var(--muted); }
+.mg-fb .h{ display:block; font:800 30px/1.2 var(--body); margin-bottom:6px; }
+.mg-fb.ok{ border:3px solid var(--ok); color:var(--text); } .mg-fb.ok .h{ color:var(--ok); }
+.mg-fb.bad{ border:3px solid var(--no); color:var(--text); } .mg-fb.bad .h{ color:var(--no); }
+.mg-next{ height:76px; border-radius:38px; background:var(--mint); color:#062016; font:700 30px/1 var(--display); box-shadow:0 6px 0 #2a9c6c; }
+.mg-next:disabled{ background:var(--panel-2); color:var(--muted); box-shadow:none; }
+/* fast facts: a big fact, four tiles that never move, no Next button */
+.mg-q.fast .mg-prompt{ font:700 104px/1 var(--display); text-align:center; min-height:0; height:150px; display:flex; align-items:center; justify-content:center; white-space:nowrap; }
+.mg-q.fast .mg-choices{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.mg-q.fast .mg-ch{ position:relative; min-height:150px; justify-content:center; border-radius:28px; font:700 64px/1 var(--display); }
+.mg-q.fast .mg-ch .k{ position:absolute; left:14px; top:14px; width:46px; height:46px; font-size:24px; }
+.mg-q.fast .mg-fb{ height:150px; min-height:0; overflow:hidden; }
+.mg-q.fast .mg-next{ display:none; }
+
+/* shop */
+.mg-shop{ position:absolute; inset:0; z-index:5; background:rgba(6,14,10,.96); padding:18px 26px; display:flex; flex-direction:column; gap:12px; }
+.mg-shophead{ display:flex; align-items:center; gap:20px; }
+.mg-shophead h2{ margin:0; font:700 50px/1 var(--display); color:var(--mint); }
+.mg-shophead .cash{ font:700 38px/1 var(--display); }
+.mg-x{ width:76px; height:76px; border-radius:50%; background:var(--panel); border:2px solid var(--border); font:800 48px/1 var(--body); }
+.mg-sec{ font:800 24px/1 var(--body); letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-top:4px; }
+.mg-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; } .mg-grid.three{ grid-template-columns:1fr 1fr 1fr; }
+.mg-sc{ border-radius:20px; background:var(--panel); border:3px solid var(--border); border-top:10px solid var(--mint); padding:12px 18px 14px; display:flex; flex-direction:column; gap:8px; min-width:0; }
+.mg-sc .top{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.mg-grid.three .mg-sc{ border-top-color:var(--coral); }
+.mg-sc .n{ font:700 32px/1.1 var(--display); } .mg-sc .d{ font:600 26px/1.25 var(--body); color:var(--muted); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.mg-pips{ display:flex; gap:8px; } .mg-pips span{ width:22px; height:22px; border-radius:50%; background:var(--panel-2); } .mg-pips span.on{ background:#fff; }
+.mg-buy{ height:72px; border-radius:36px; background:var(--mint); color:#062016; font:700 28px/1 var(--display); margin-top:auto; }
+.mg-buy:disabled{ background:var(--panel-2); color:var(--muted); }
+
+/* start and end */
+.mg-over{ position:absolute; inset:0; z-index:15; display:grid; place-items:center; text-align:center;
+  background:radial-gradient(46% 40% at 50% 24%, rgba(92,242,176,.12), transparent 70%), repeating-linear-gradient(90deg, rgba(255,255,255,.02) 0 80px, transparent 80px 160px), rgba(6,13,10,.97); }
+.mg-box{ width:1260px; }
+.mg-big{ margin:0; font:700 160px/1 var(--display); letter-spacing:.01em; } .mg-big b{ color:var(--mint); font-weight:700; } .mg-big i{ color:var(--coral); font-style:normal; }
+.mg-sub{ font:700 34px/1.35 var(--body); color:var(--muted); margin:18px 0 30px; }
+.mg-steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:22px; text-align:left; margin-bottom:30px; }
+.mg-step{ position:relative; border-radius:20px; background:var(--panel); border:3px solid var(--border); padding:22px 22px 22px 26px; font:600 29px/1.3 var(--body); }
+.mg-step b{ display:flex; align-items:center; gap:12px; font:700 34px/1.1 var(--display); color:var(--mint); margin-bottom:10px; }
+.mg-step b::before{ content:''; width:30px; height:30px; border-radius:50%; flex:none; background:radial-gradient(circle at 35% 30%, #fff 0 40%, #C9D4CD 100%); }
+.mg-step:nth-child(2) b{ color:var(--c-m); } .mg-step:nth-child(3) b{ color:var(--coral); }
+.mg-row{ display:flex; justify-content:center; align-items:center; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
+.mg-input{ width:520px; height:84px; border-radius:42px; border:3px solid var(--border); background:var(--panel); color:var(--text); font:800 36px/1 var(--body); padding:0 30px; -webkit-user-select:text; user-select:text; }
+.mg-input:focus{ outline:none; border-color:var(--mint); }
+.mg-go{ height:96px; padding:0 80px; border-radius:48px; background:var(--mint); color:#062016; font:700 46px/1 var(--display); box-shadow:0 8px 0 #2a9c6c; }
+.mg-go:disabled{ background:var(--panel-2); color:var(--muted); box-shadow:none; }
+.mg-keys{ margin-top:26px; font:600 25px/1.35 var(--body); color:var(--muted); }
+.mg-name{ font:700 56px/1.1 var(--display); color:var(--coral); margin:10px 0 4px; word-break:break-word; }
+.mg-final{ font:700 120px/1 var(--display); color:var(--mint); margin:6px 0 0; }
+.mg-stats{ display:grid; grid-template-columns:repeat(5,1fr); gap:14px; margin:22px 0 14px; }
+.mg-stat{ border-radius:20px; background:var(--panel); border:3px solid var(--border); padding:16px; }
+.mg-stat .l{ font:800 22px/1.2 var(--body); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+.mg-stat .v{ font:700 44px/1.15 var(--display); }
+.mg-topics{ display:grid; grid-template-columns:repeat(auto-fit,minmax(0,1fr)); gap:14px; margin-bottom:22px; }
+.mg-again{ height:76px; padding:0 40px; border-radius:38px; background:var(--panel); border:3px solid var(--border); font:700 30px/1 var(--display); }
+.mg-again.arm{ border-color:var(--no); color:var(--no); }
+.mg-credit{ font:800 18px/1 var(--body); letter-spacing:.14em; text-transform:uppercase; color:var(--muted); white-space:nowrap; }
+.mg-over .mg-credit{ position:absolute; right:36px; bottom:28px; font-size:24px; }
+.mg-toast{ position:absolute; left:50%; top:110px; transform:translateX(-50%); z-index:30; padding:16px 30px; border-radius:999px; background:#fff; color:#07120E; font:800 30px/1 var(--body); }
+#mg-confetti{ position:absolute; left:0; top:0; width:1920px; height:1080px; z-index:18; pointer-events:none; }
+
+/* ================= SPITZ ARCADE BRAND (shared by every game: keep identical) ================= */
+.sz-credit{ display:inline-flex !important; align-items:center; gap:10px; font:800 18px/1 Inter,system-ui,sans-serif !important; letter-spacing:.16em !important; text-transform:uppercase; color:var(--sz-ink) !important; white-space:nowrap; }
+.sz-credit::before{ content:''; flex:none; width:26px; height:5px; border-radius:3px; background:var(--sz-mark); }
+.sz-eyebrow{ display:inline-flex; align-items:center; gap:14px; margin:0 0 18px; font:800 24px/1 Inter,system-ui,sans-serif; letter-spacing:.34em; text-transform:uppercase; color:var(--sz-ink); }
+.sz-eyebrow::before,.sz-eyebrow::after{ content:''; width:40px; height:5px; border-radius:3px; background:var(--sz-mark); }
+.sz-eyebrow b{ color:var(--sz-mark); font-weight:800; }
+.sz-mus{ height:84px; padding:0 26px; border-radius:20px; background:var(--panel); border:3px solid var(--border); font:800 30px/1 Inter,system-ui,sans-serif; color:var(--sz-ink); white-space:nowrap; }
+.sz-mus.on{ border-color:var(--sz-mark); color:var(--text); }
+.sz-ask{ z-index:40; } .sz-ask h2{ margin:0 0 6px; font:400 84px/1.05 var(--display); color:var(--text); }
+.sz-ask .sz-askrow{ display:flex; justify-content:center; gap:20px; }
+.sz-ask button{ height:96px; padding:0 44px; border-radius:22px; font:800 32px/1 Inter,system-ui,sans-serif; background:var(--panel); border:3px solid var(--border); color:var(--text); }
+.sz-ask #sz-askyes{ background:var(--sz-mark); border-color:var(--sz-mark); color:#111; }
+[class$="-logo"]{ cursor:pointer; }
+
+/* the full-screen reminder sits in the empty middle of the top bar, clear of the scorecard */
+body:has(#mg-start[hidden]):has(#mg-end[hidden]) .sz-fs{ top:22px !important; bottom:auto !important; left:41% !important; }   /* in play: the top bar; start and end screens: the shared top right corner */
+/* ================= PERF: compositor-only pulses (games/tools/perf_pass.py) ================= */
+#mg-ballchip.empty{ animation:none; isolation:isolate; position:relative; }
+#mg-ballchip.empty::after{ content:''; position:absolute; inset:0; border-radius:inherit; background:var(--no); opacity:0; z-index:-1; pointer-events:none; animation:szPulseO 1s infinite; }
+@keyframes szPulseO{ 50%{ opacity:.25; } }
+.mg-course.final{ animation:none; border-color:var(--coral); }
+.mg-course.final::after{ content:''; position:absolute; inset:0; border-radius:inherit; box-shadow:inset 0 0 40px 6px var(--coral); opacity:0; z-index:40; pointer-events:none; animation:szGlowO 0.7s infinite alternate; }
+.mg-putt.ready{ animation:none; position:relative; }
+.mg-putt.ready::after{ content:''; position:absolute; inset:0; border-radius:inherit; box-shadow:0 0 0 6px rgba(15,42,31,.25); opacity:0; pointer-events:none; animation:szPulseO2 1.2s infinite; }
+@keyframes szPulseO2{ 50%{ opacity:1; } }
+@keyframes szGlowO{ to{ opacity:1; } }
+/* ================= /PERF ================= */
+</style>
+</head>
+<body>
+<div id="stage">
+  <div class="mg-top">
+    <div class="mg-brand"><h1 class="mg-logo"><span class="mg-flag" aria-hidden="true"></span><span><b>MINI</b> <i>GOLF</i></span></h1><span class="mg-credit sz-credit">Made by Spitz 🍔</span></div>
+    <div class="mg-chip" id="mg-timerchip"><span class="l">Time</span><span class="v" id="mg-time">5:00</span></div>
+    <span class="mg-sp"></span>
+    <div class="mg-chip" id="mg-scorechip"><span class="l">Score</span><span class="v" id="mg-score">0</span></div>
+    <div class="mg-chip" id="mg-ballchip"><span class="l">Balls</span><span class="v" id="mg-balls">0</span></div>
+    <div class="mg-chip" id="mg-cashchip"><span class="l">Cash</span><span class="v" id="mg-cash">$0</span></div>
+    <div class="mg-chip" id="mg-streakchip"><span class="l">Streak</span><span class="v" id="mg-streak">0</span></div>
+    <button class="mg-shopbtn" id="mg-shopbtn" aria-label="Open the Pro Shop, key S">Pro Shop</button>
+  </div>
+  <div id="mg-main">
+    <div class="mg-q" id="mg-q">
+      <div class="mg-qhead"><span class="mg-tag" id="mg-tag">Questions</span><span class="mg-reward" id="mg-reward"></span></div>
+      <div class="mg-prompt" id="mg-prompt"></div>
+      <div id="mg-body"><div id="mg-visual"></div><div class="mg-choices" id="mg-choices"></div></div>
+      <div class="mg-fb" id="mg-fb">Answer correctly to earn golf balls and cash.</div>
+      <button class="mg-next" id="mg-next" disabled>Next question ›</button>
+    </div>
+    <div class="mg-right">
+      <div class="mg-course" id="mg-course">
+        <canvas id="mg-canvas" width="1054" height="836" aria-label="Mini golf course. Click where the ball should stop, then hold Space, the spot or the Putt button to power up and let go to putt."></canvas>
+        <div class="mg-buffs" id="mg-buffs"></div>
+        <div class="mg-ss" id="mg-ss" hidden>
+          <div class="mg-sshead">SLOPE SHOT · free putt</div>
+          <div class="mg-ssq">Which slope runs straight from the ball to the cup?</div>
+          <div class="mg-sschoices" id="mg-sschoices"></div>
+          <div class="mg-ssmsg" id="mg-ssmsg"></div>
+        </div>
+        <div class="mg-shop" id="mg-shop" hidden>
+          <div class="mg-shophead"><h2>Pro Shop</h2><span class="cash" id="mg-shopcash">$0</span><span class="mg-sp"></span><button class="mg-x" id="mg-shopx" aria-label="Close the shop">×</button></div>
+          <div class="mg-sec">Upgrades (keep for the whole run)</div>
+          <div class="mg-grid" id="mg-upg"></div>
+          <div class="mg-sec">Power-ups (start right away)</div>
+          <div class="mg-grid three" id="mg-pow"></div>
+        </div>
+      </div>
+      <div class="mg-card">
+        <div class="mg-nine" id="mg-nine">FRONT<br>NINE</div>
+        <div class="mg-cells" id="mg-cells"></div>
+        <div class="mg-holeinfo" id="mg-holeinfo"></div>
+        <button class="mg-putt" id="mg-putt" disabled aria-label="Hold to putt, or hold Space">Hold to putt</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="mg-over" id="mg-start"><div class="mg-box">
+    <div class="sz-eyebrow">Spitz <b>Arcade</b></div><h2 class="mg-big"><b>MINI</b> <i>GOLF</i></h2>
+    <p class="mg-sub"><span class="sz-setname">Slope-intercept form.</span> You have 5 minutes: answer questions to earn golf balls, then sink your putts.</p>
+    <div class="mg-steps">
+      <div class="mg-step"><b>1. Answer</b>Each right answer earns golf balls and cash. A wrong answer costs a little cash and breaks your streak.</div>
+      <div class="mg-step"><b>2. Putt</b>Click where the ball should stop. Hold Space to power up and let go at 100%. Each putt uses 1 ball.</div>
+      <div class="mg-step"><b>3. Upgrade</b>Spend cash in the Pro Shop on more balls, a bigger cup, more points and power-ups.</div>
+    </div>
+    <div class="mg-row"><input class="mg-input" id="mg-nameinput" maxlength="24" placeholder="Your first and last name" autocomplete="off" aria-label="Your name"><button class="sz-mus" id="sz-mus" aria-label="Music on or off, key N">♪ Music on</button></div>
+    <button class="mg-go" id="mg-go" disabled>Start</button>
+    <div class="mg-keys">Keys: 1–4 answer · Enter next question · arrows aim · hold Space to putt · A–D slope shot<br>S shop · N music · M mute · Shift+R new game · F full screen</div>
+  </div><span class="mg-credit sz-credit">Made by Spitz 🍔</span></div>
+
+  <div class="mg-over" id="mg-end" hidden><div class="mg-box"><div class="sz-eyebrow">Spitz <b>Arcade</b></div>
+    <p class="mg-sub" style="margin:0">Time! Show this screen to your teacher.</p>
+    <div class="mg-name" id="mg-endname"></div>
+    <div class="mg-final" id="mg-endscore">0</div>
+    <div class="mg-stats" id="mg-endstats"></div>
+    <div class="mg-topics" id="mg-endtopics"></div>
+    <button class="mg-again" id="mg-again">Play again</button>
+  </div><span class="mg-credit sz-credit">Made by Spitz 🍔</span></div>
+
+  <div class="mg-over sz-ask" id="sz-ask" hidden role="dialog" aria-modal="true" aria-labelledby="sz-asktitle"><div class="mg-box">
+    <h2 id="sz-asktitle">Start a new game?</h2>
+    <p class="mg-sub">This erases the current run and starts over from the beginning.</p>
+    <div class="sz-askrow"><button id="sz-askno">No, keep playing (N)</button><button id="sz-askyes">Yes, new game (Y)</button></div>
+  </div></div>
+  <canvas id="mg-confetti" width="960" height="540" aria-hidden="true"></canvas>
+  <div class="mg-toast" id="mg-toast" hidden></div>
+</div>
+
+<script src="questions.js"></script>
+<script src="scorecode.js"></script>
+<script>
+(function(){
+'use strict';
+var $=function(id){ return document.getElementById(id); };
+var KEY='mini_golf_v1';
+/* question set + topics come from the hub link (questions.js). With no set in the link, the game plays the slope-intercept set. */
+var QS=window.SpitzQ?(window.SpitzQ.forGame('mg')||defaultSet()):null; if(QS) KEY+=QS.suffix;
+var FAST=!!(QS&&QS.set==='mult');
+function defaultSet(){ var set=SpitzQ.sets.rat, Q=set.make('mg'), tb=[], last='';
+  return { set:'rat', name:set.name, custom:false, suffix:'',
+    topicTable:function(){ var o={}; set.topics.forEach(function(t){ o[t[1]]=[0,0]; }); return o; },
+    next:function(){ if(!tb.length) tb=set.topics.slice().sort(function(){ return Math.random()-0.5; });
+      var t=tb.pop(), l=t[2], ty; do{ ty=l[Math.floor(Math.random()*l.length)]; }while(ty===last&&l.length>1); last=ty; var q=Q.build(ty); q.topic=t[1]; return q; } }; }
+
+/* ================= SOUND (synthesized) ================= */
+var AC=null, muted=false;
+function ac(){ if(!AC){ var C=window.AudioContext||window.webkitAudioContext; if(!C) return null; AC=new C(); } if(AC.state==='suspended') AC.resume(); return AC; }
+function count(){ window.__snd=(window.__snd||0)+1; }
+function tone(f1,f2,t0,dur,type,vol){ var a=ac(); if(!a||muted) return; var o=a.createOscillator(), g=a.createGain(), t=a.currentTime+t0;
+  o.type=type||'sine'; o.frequency.setValueAtTime(f1,t); if(f2&&f2!==f1) o.frequency.exponentialRampToValueAtTime(f2,t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.25,t+0.015); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(a.destination); o.start(t); o.stop(t+dur+0.03); count(); }
+function noise(t0,vol,ms,hp,lp){ var a=ac(); if(!a||muted) return; var n=Math.floor(a.sampleRate*(ms||35)/1000), buf=a.createBuffer(1,n,a.sampleRate), d=buf.getChannelData(0);
+  for(var i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2);
+  var s=a.createBufferSource(), f=a.createBiquadFilter(), g=a.createGain(); s.buffer=buf; f.type=lp?'lowpass':'highpass'; f.frequency.value=lp||hp||1800; g.gain.value=vol||0.5;
+  s.connect(f); f.connect(g); g.connect(a.destination); s.start(a.currentTime+t0); count(); }
+function brass(f,t0,dur,vol){ var a=ac(); if(!a||muted) return; var t=a.currentTime+t0, g=a.createGain(), lp=a.createBiquadFilter(); vol=vol||0.14;
+  lp.type='lowpass'; lp.frequency.setValueAtTime(900,t); lp.frequency.linearRampToValueAtTime(3200,t+0.05); lp.frequency.linearRampToValueAtTime(1700,t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.025); g.gain.setValueAtTime(vol,t+Math.max(0.03,dur-0.08)); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  [-6,6].forEach(function(det){ var o=a.createOscillator(); o.type='sawtooth'; o.frequency.value=f; o.detune.value=det; o.connect(lp); o.start(t); o.stop(t+dur+0.03); });
+  lp.connect(g); g.connect(a.destination); count(); }
+
+var G4=392,B4=493.88,C5=523.25,D5=587.33,E5=659.25,F5=698.46,G5=783.99,A5=880,C6=1046.5,E6=1318.5;
+var SND={
+  putt:function(){ tone(900,640,0,0.07,'sine',0.2); tone(450,330,0,0.06,'triangle',0.1); },                 // a soft "tock" off the putter
+  boing:function(){ tone(260,640,0,0.18,'sine',0.16); tone(520,1280,0,0.12,'triangle',0.05); },
+  cup:function(){ tone(720,540,0,0.07,'sine',0.18); tone(540,400,0.09,0.08,'sine',0.16); tone(400,320,0.2,0.1,'sine',0.13); },   // the ball rattles into the cup
+  sunk:function(){ [C5,E5,G5].forEach(function(f,i){ tone(f,f,0.3+i*0.09,0.32,'triangle',0.12); tone(f*2,f*2,0.3+i*0.09,0.2,'sine',0.04); }); },
+  ace:function(){ var t=0.3; brass(G4,t,0.11); brass(C5,t+0.12,0.11); brass(E5,t+0.24,0.11); [C5,E5,G5].forEach(function(f){ brass(f,t+0.38,0.8,0.11); }); tone(C6,C6,t+0.42,0.6,'triangle',0.1); tone(E6,E6,t+0.52,0.5,'triangle',0.08); },
+  splash:function(){ noise(0,0.3,320,0,700); tone(320,120,0,0.28,'sine',0.12); },
+  gem:function(){ tone(1568,1568,0,0.06,'triangle',0.09); tone(2093,2093,0.05,0.14,'triangle',0.08); },
+  lip:function(){ tone(620,700,0,0.08,'sine',0.1); },
+  empty:function(){ tone(330,300,0,0.06,'triangle',0.12); tone(330,300,0.1,0.06,'triangle',0.12); },
+  correct:function(){ tone(F5,F5,0,0.14,'sine',0.13); tone(A5,A5,0.07,0.14,'sine',0.12); tone(C6,C6,0.14,0.3,'triangle',0.12); },   // a soft rising chime
+  cash:function(){ tone(1568,1568,0,0.06,'triangle',0.1); tone(2093,2093,0.06,0.14,'triangle',0.09); },
+  miss:function(){ tone(233,175,0.02,0.36,'triangle',0.18); },
+  tick:function(){ tone(1200,1200,0,0.05,'triangle',0.1); },
+  slope:function(){ [C5,E5,G5,C6].forEach(function(f,i){ tone(f,f,i*0.08,0.16,'triangle',0.1); }); },
+  final:function(){ [0,0.18,0.36].forEach(function(t){ brass(G5,t,0.12,0.12); }); brass(C6,0.54,0.5,0.13); },
+  win:function(){ var t=0.1; [C5,E5,G5,C6].forEach(function(f,i){ tone(f,f,t+i*0.1,0.16,'triangle',0.11); });
+    [F5,A5,C6].forEach(function(f){ tone(f,f,t+0.5,1.2,'triangle',0.07); tone(f/2,f/2,t+0.5,1.2,'sine',0.06); }); tone(87.31,87.31,t+0.5,1.1,'triangle',0.22); }
+};
+/* ================= SOUND PASS: volume trims (games/tools/sound_pass.py) */
+(function(T){ Object.keys(T).forEach(function(n){ var f=SND[n]; if(!f) return;
+  SND[n]=function(){ var a=ac(); if(!a) return f.apply(this,arguments);
+    var bus=a.createGain(); bus.gain.value=T[n]; bus.connect(a.destination);                  // this sound's own volume knob
+    Object.defineProperty(a,'destination',{configurable:true,get:function(){ return bus; }});
+    try{ return f.apply(this,arguments); } finally{ delete a.destination; } }; }); })({win:1.26,ace:0.63});
+/* ================= /SOUND PASS */
+var tapAt=0; function tapSnd(v){ var t=Date.now(); if(t-tapAt<80) return; tapAt=t; tone(330,270,0,0.06,'sine',Math.min(0.16,0.04+v*0.012)); }
+
+/* ================= SONG: "Moonlight Putt" (soft bossa nova, 100 bpm, F) =================
+   A brushed groove with a clave rim click, a gentle bass and soft keys. The top layer drops back while the student reads. */
+var MG_CH=[[87.31,[349.23,440.00,523.25,659.25]],[98.00,[392.00,466.16,587.33,698.46]],[110.00,[440.00,523.25,659.25,783.99]],[116.54,[466.16,587.33,698.46,880.00]]];
+var MG_BASS=[[0,0],[6,7],[8,0],[14,7]], MG_CLAVE=[0,3,6,10,12], MG_MEL=[[0,12],[3,9],[6,7],[10,9],[12,4]];
+var SONG={ level:0.1, echo:0.3,
+  want:function(){ return !!S&&S.started&&!S.over; },
+  busy:function(){ return szActive(2500); },
+  sd:function(){ return 0.15; },
+  voice:function(f,t0,dur){ tone(f,f,t0,dur,'sine',0.12); tone(f*2,f*2,t0,dur*0.6,'triangle',0.04); },
+  step:function(ctx,g,i,t,sd){ var bar=Math.floor(i/16), c=MG_CH[Math.floor(bar/2)%4], k=i%16;
+    if(k===0||k===8) mKick(ctx,g.out,t,0.5,120,50);
+    MG_BASS.forEach(function(m){ if(m[0]===k) mNote(ctx,g.out,'triangle',c[0]*Math.pow(2,m[1]/12),t,sd*2.2,0.4,700,null); });
+    if(MG_CLAVE.indexOf(k)>=0) mHit(ctx,g,g.act,t,0.03,0.07,3500);                                                   // rim click on the clave
+    if(k===2||k===7||k===10||k===13) c[1].forEach(function(f){ mNote(ctx,g.act,'sine',f,t,sd*1.6,0.03,2000,null,0.01); mNote(ctx,g.act,'triangle',f*2,t,sd*0.8,0.008,3000,null); });   // soft keys
+    if(k%2===1) mHit(ctx,g,g.act,t,0.025,0.02,7000);                                                                  // brushes
+    if(bar%4===3) MG_MEL.forEach(function(m){ if(m[0]===k) mNote(ctx,g.act,'sine',c[0]*4*Math.pow(2,m[1]/12),t,sd*2.5,0.05,2600,g.echo); });
+  } };
+
+/* ================= SPITZ KIT (shared by every game: music switch, jingle) =================
+   M mutes everything; N turns just the music off (remembered on this Chromebook). */
+var SZ_MUSIC_OFF=false, SZ_IN=-1e9, szOnMusic=function(){};
+try{ SZ_MUSIC_OFF=localStorage.getItem('spitz_music_off')==='1'; }catch(e){}
+['pointerdown','keydown'].forEach(function(n){ addEventListener(n,function(){ SZ_IN=Date.now(); },true); });
+function szActive(ms){ return Date.now()-SZ_IN<(ms||2500); }
+function musicToggle(){ SZ_MUSIC_OFF=!SZ_MUSIC_OFF; try{ localStorage.setItem('spitz_music_off',SZ_MUSIC_OFF?'1':'0'); }catch(e){} musBtn(); toast(SZ_MUSIC_OFF?'Music off':'Music on'); szOnMusic(); }
+function musBtn(){ var b=document.getElementById('sz-mus'); if(b){ b.textContent=SZ_MUSIC_OFF?'♪ Music off':'♪ Music on'; b.classList.toggle('on',!SZ_MUSIC_OFF); } }
+/* the Spitz jingle: the same notes open every game, played on that game's own instrument */
+var JINGLE=[[392.00,0,0.12],[523.25,0.13,0.12],[659.25,0.26,0.12],[783.99,0.40,0.34],[659.25,0.78,0.12],[783.99,0.92,0.7]];
+function jingle(){ JINGLE.forEach(function(n){ SZ_VOICE(n[0],n[1],n[2]); }); }
+
+/* ================= SPITZ MUSIC (shared engine; the game supplies SONG) =================
+   Synthesized, no audio files. It plays only during a run, sits under the sound effects (25 Chromebooks play it at once),
+   and backs off while the student reads a question. */
+var MUS={ on:false, g:null, i:0, t:0 }, SZ_VOICE=function(f,t0,dur){ SONG.voice(f,t0,dur); };
+function musGraph(ctx,dest){ var out=ctx.createGain(), act=ctx.createGain(), d=ctx.createDelay(1), fb=ctx.createGain(), wet=ctx.createGain(); out.gain.value=SONG.level; out.connect(dest); act.connect(out);
+  d.delayTime.value=SONG.echo||0.3; fb.gain.value=0.28; wet.gain.value=0.3; d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(act);
+  var n=Math.floor(ctx.sampleRate*0.3), buf=ctx.createBuffer(1,n,ctx.sampleRate), ch=buf.getChannelData(0); for(var i=0;i<n;i++) ch[i]=Math.random()*2-1;
+  return {out:out,act:act,echo:d,noise:buf}; }
+function mNote(ctx,to,type,fr,t,dur,vol,cut,echo,att){ var o=ctx.createOscillator(), f=ctx.createBiquadFilter(), e=ctx.createGain(); o.type=type; o.frequency.value=fr; f.type='lowpass'; f.frequency.value=cut||2400;
+  e.gain.setValueAtTime(0.0001,t); e.gain.exponentialRampToValueAtTime(vol,t+(att||0.008)); e.gain.setValueAtTime(vol,t+Math.max(att||0.008,dur*0.55)); e.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(f); f.connect(e); e.connect(to); if(echo) e.connect(echo); o.start(t); o.stop(t+dur+0.03); return o; }
+function mHit(ctx,g,to,t,dur,vol,hp,lp){ var s=ctx.createBufferSource(), f=ctx.createBiquadFilter(), e=ctx.createGain(); s.buffer=g.noise; f.type=lp?'lowpass':'highpass'; f.frequency.value=lp||hp;
+  e.gain.setValueAtTime(vol,t); e.gain.exponentialRampToValueAtTime(0.0001,t+dur); s.connect(f); f.connect(e); e.connect(to); s.start(t); s.stop(t+dur+0.03); }
+function mKick(ctx,to,t,vol,hi,lo){ var o=ctx.createOscillator(), e=ctx.createGain(); o.type='sine'; o.frequency.setValueAtTime(hi||200,t); o.frequency.exponentialRampToValueAtTime(lo||48,t+0.12);
+  e.gain.setValueAtTime(0.0001,t); e.gain.exponentialRampToValueAtTime(vol||0.8,t+0.005); e.gain.exponentialRampToValueAtTime(0.0001,t+0.2); o.connect(e); e.connect(to); o.start(t); o.stop(t+0.22); }
+function musicTick(){ var a=AC, want=SONG.want()&&!muted&&!SZ_MUSIC_OFF;
+  if(!want){ if(MUS.on){ MUS.on=false; var g=MUS.g; MUS.g=null; if(g&&a){ g.out.gain.setTargetAtTime(0,a.currentTime,0.2); setTimeout(function(){ try{ g.out.disconnect(); }catch(e){} },1400); } } return; }
+  if(!a||a.state!=='running') return;                                              // browsers hold sound until the first click or key press
+  if(!MUS.on){ MUS.on=true; MUS.g=musGraph(a,a.destination); MUS.g.out.gain.setValueAtTime(0.0001,a.currentTime); MUS.g.out.gain.linearRampToValueAtTime(SONG.level,a.currentTime+1.2); MUS.i=0; MUS.t=a.currentTime+0.1; }
+  MUS.g.act.gain.setTargetAtTime(SONG.busy()?1:0.35,a.currentTime,0.35);            // playing: full band. Reading a question: it backs off so they can think
+  if(MUS.t<a.currentTime) MUS.t=a.currentTime+0.05;                                 // the tab was in the background: pick up from now
+  while(MUS.t<a.currentTime+0.5){ var sd=SONG.sd(); SONG.step(a,MUS.g,MUS.i,MUS.t,sd); MUS.t+=sd; MUS.i++; } }
+setInterval(musicTick,120);
+/* test hook: render the music off line and measure it */
+window.__music=function(sec){ var C=window.OfflineAudioContext||window.webkitOfflineAudioContext, c=new C(1,44100*sec,44100), g=musGraph(c,c.destination), t=0.05, i=0;
+  while(t<sec){ var sd=SONG.sd(); SONG.step(c,g,i,t,sd); t+=sd; i++; }
+  return c.startRendering().then(function(buf){ var d=buf.getChannelData(0), pk=0, sq=0, bad=0, n=d.length; for(var j=0;j<n;j++){ var v=d[j]; if(v!==v) bad++; pk=Math.max(pk,Math.abs(v)); sq+=v*v; }
+    return {peak:pk, rms:Math.sqrt(sq/n), bad:bad, steps:i}; }); };
+
+/* ================= CONFETTI (always on, even with reduced motion) ================= */
+var parts=[], craf=0, cfLast=0, cfSeen=0, CFC=['#FF3DB4','#B6FF3D','#2DE2E6','#FF8A1F','#FFF04D','#C77DFF','#FFFFFF'];
+function confetti(x,y,n,spread){ for(var i=0;i<n;i++){ var a=-Math.PI/2+(Math.random()-0.5)*spread, sp=8+Math.random()*15;
+    parts.push({x:x,y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,w:10+Math.random()*12,h:6+Math.random()*8,r:Math.random()*6.28,vr:(Math.random()-0.5)*0.5,c:CFC[i%CFC.length],life:0,max:85+Math.random()*60}); }
+  if(parts.length>700) parts=parts.slice(-700);
+  window.__conf=(window.__conf||0)+n; if(!craf||Date.now()-cfSeen>400){ if(craf) cancelAnimationFrame(craf); cfLast=0; craf=requestAnimationFrame(cfStep); } }
+function cfStep(ts){ craf=0; cfSeen=Date.now(); var f=cfLast?Math.min(6,(ts-cfLast)/16.67):1; cfLast=ts; var cfv=$('mg-confetti'), c=cfv.getContext('2d'), cfk=cfv.width/1920; c.setTransform(cfk,0,0,cfk,0,0); c.clearRect(0,0,1920,1080);
+  parts=parts.filter(function(p){ return p.life<p.max&&p.y<1120; });
+  var d1=Math.pow(0.985,f), d2=Math.pow(0.992,f);
+  parts.forEach(function(p){ p.life+=f; p.vy+=0.42*f; p.vx*=d1; p.vy*=d2; p.x+=p.vx*f; p.y+=p.vy*f; p.r+=p.vr*f; var k=Math.cos(p.life*0.2);
+    c.save(); c.translate(p.x,p.y); c.rotate(p.r); c.globalAlpha=Math.min(1,(p.max-p.life)/25); c.fillStyle=p.c; c.fillRect(-p.w/2,-p.h/2*k,p.w,p.h*k); c.restore(); });
+  craf=parts.length? requestAnimationFrame(cfStep) : (c.clearRect(0,0,1920,1080),0); }
+var toastT=0; function toast(msg){ var t=$('mg-toast'); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(function(){ t.hidden=true; },1500); }
+function stagePoint(el,dx,dy){ var r=el.getBoundingClientRect(), s=$('stage').getBoundingClientRect(), k=1920/s.width; return [(r.left-s.left)*k+(dx||0),(r.top-s.top)*k+(dy||0)]; }
+
+
+/* ================= MATH HELPERS (exact: integers and reduced fractions only) ================= */
+var MINUS='−';
+function gcd(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ var t=a%b; a=b; b=t; } return a; }
+function R(n,d){ if(d<0){ n=-n; d=-d; } var g=gcd(n,d)||1; return {n:n/g,d:d/g}; }
+function rEq(a,b){ return a.n*b.d===b.n*a.d; }
+function ri(a,b){ return a+Math.floor(Math.random()*(b-a+1)); }
+function num(n){ return n<0? MINUS+(-n) : ''+n; }
+function frac(n,d){ return '<span class="mg-fr"><span>'+n+'</span><span>'+d+'</span></span>'; }
+function fmtR(r){ if(r.d===1) return num(r.n); return (r.n<0?MINUS:'')+frac(Math.abs(r.n),r.d); }
+function txtR(r){ return r.d===1? num(r.n) : num(r.n)+'/'+r.d; }
+function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+
+/* ================= THE COURSE: holes on a grid (1 square = 1 unit; y counts down the screen) ================= */
+var GW=19, GH=15, UN=52, OX=33, OY=28, W=1054, H=836, BR=0.28, DT=1/240, FR=6.5, FR_SAND=30, CAP=7.5, MAXD=12;
+var BORDER=[[-3,-3,GW+6,3],[-3,GH,GW+6,3],[-3,-3,3,GH+6],[GW,-3,3,GH+6]];
+var HOLES=[
+  {name:'Opening Drive', par:2, tee:[3,11], cup:[13,5], bump:[[9,12,0.6],[16,10,0.6]], gems:[[6,4],[16,3]]},
+  {name:'The Wall', par:3, tee:[3,12], cup:[15,3], walls:[[8,5,1,10]], bump:[[13,9,0.6]], gems:[[4,2],[14,12]]},
+  {name:'Slope Shot', par:2, slope:{tee:[3,10]}, bump:[[17,2.5,0.6],[1.5,2.5,0.6]], gems:[[10,13.5]]},
+  {name:'The Slider', par:3, tee:[2,7], cup:[17,7], walls:[[6,0,7,4.5],[6,9.5,7,5.5]], slider:{r:[9,4.5,1,1.6], range:3.4, period:3.2}, gems:[[16,2],[16,12]]},
+  {name:'Sand Trap', par:3, tee:[2,2], cup:[16,12], sand:[[7,4,6,6]], bump:[[14,5,0.6],[4,12,0.6]], gems:[[10,13],[17,2]]},
+  {name:'Slope Shot', par:2, slope:{tee:[3,11]}, water:[[14,0,5,3.5]], gems:[[2,4]]},
+  {name:'The Bridge', par:3, tee:[2,7], cup:[17,7], water:[[6,0,7,6],[6,8,7,7]], gems:[[3,2],[16,12]]},
+  {name:'The Hill', par:3, tee:[2,3], cup:[17,3], hills:[{r:[5,0,9,15],p:[0,3]}], bump:[[9.5,11,0.7]], gems:[[9,7],[15,13]]},
+  {name:'Slope Shot', par:2, slope:{tee:[2,10]}, bump:[[17,13,0.6],[10,2.5,0.6]], gems:[[16,3]]}
+];
+/* the back nine is the front nine flipped left to right, so it plays differently */
+var HC={};
+function hole(n){ if(HC[n]) return HC[n]; var b=HOLES[n%9], mir=Math.floor(n/9)%2===1;
+  function mx(p){ return mir?[GW-p[0],p[1]]:[p[0],p[1]]; } function mr(r){ return mir?[GW-r[0]-r[2],r[1],r[2],r[3]]:r.slice(); }
+  var h={ n:n, name:b.name, par:b.par, slope:!!b.slope, tee:mx(b.slope?b.slope.tee:b.tee), cup:b.cup?mx(b.cup):null,
+    walls:(b.walls||[]).map(mr), sand:(b.sand||[]).map(mr), water:(b.water||[]).map(mr),
+    hills:(b.hills||[]).map(function(x){ return {r:mr(x.r), p:[mir?-x.p[0]:x.p[0], x.p[1]]}; }),
+    bump:(b.bump||[]).map(function(c){ var p=mx(c); return [p[0],p[1],c[2]]; }), gems:(b.gems||[]).map(mx),
+    slider:b.slider?{r:mr(b.slider.r), range:b.slider.range, period:b.slider.period}:null };
+  h.solid=h.walls.concat(BORDER); return (HC[n]=h); }
+
+/* ---------- physics: the ball rolls to a stop exactly as far as you aimed (walls bounce it without losing speed) ---------- */
+function inR(r,x,y){ return x>=r[0]&&x<=r[0]+r[2]&&y>=r[1]&&y<=r[1]+r[3]; }
+function collideRect(b,r,vx0,vy0){ var cx=clamp(b.x,r[0],r[0]+r[2]), cy=clamp(b.y,r[1],r[1]+r[3]), dx=b.x-cx, dy=b.y-cy, d=Math.hypot(dx,dy), nx, ny;
+  if(d>=BR) return 0;
+  if(d<1e-6){ var l=b.x-r[0], rr=r[0]+r[2]-b.x, t=b.y-r[1], bb=r[1]+r[3]-b.y, m=Math.min(l,rr,t,bb); nx=m===l?-1:m===rr?1:0; ny=nx?0:(m===t?-1:1); d=-m; }
+  else { nx=dx/d; ny=dy/d; }
+  b.x+=nx*(BR-d); b.y+=ny*(BR-d);
+  var vn=(b.vx-vx0)*nx+(b.vy-vy0)*ny; if(vn<0){ b.vx-=2*vn*nx; b.vy-=2*vn*ny; return -vn; } return 0.001; }
+function bumpCircle(b,c){ var dx=b.x-c[0], dy=b.y-c[1], d=Math.hypot(dx,dy); if(d>=BR+c[2]||d<1e-6) return false; var nx=dx/d, ny=dy/d;
+  b.x=c[0]+nx*(BR+c[2]); b.y=c[1]+ny*(BR+c[2]); var vn=b.vx*nx+b.vy*ny; if(vn>=0) return false;
+  b.vx-=2.1*vn*nx; b.vy-=2.1*vn*ny; var s=Math.hypot(b.vx,b.vy); if(s>13){ b.vx*=13/s; b.vy*=13/s; } return true; }
+function sliderAt(h,t){ var s=h.slider; if(!s) return null; var w=2*Math.PI/s.period, k=0.5-0.5*Math.cos(w*t);
+  return { r:[s.r[0], s.r[1]+s.range*k, s.r[2], s.r[3]], vy:s.range*0.5*w*Math.sin(w*t) }; }
+function phys(b,h,t,real){ var i, fr=FR, hit, ev='';
+  for(i=0;i<h.sand.length;i++) if(inR(h.sand[i],b.x,b.y)){ fr=FR_SAND; break; }
+  for(i=0;i<h.hills.length;i++){ var hl=h.hills[i]; if(inR(hl.r,b.x,b.y)){ b.vx+=hl.p[0]*DT; b.vy+=hl.p[1]*DT; } }
+  var dc=Math.hypot(b.cup[0]-b.x,b.cup[1]-b.y);
+  if(b.mag&&dc<2.2&&dc>0.02){ b.vx+=(b.cup[0]-b.x)/dc*16*DT; b.vy+=(b.cup[1]-b.y)/dc*16*DT; }
+  var sp=Math.hypot(b.vx,b.vy), ns=sp-fr*DT; if(ns<=0){ b.vx=0; b.vy=0; return 'stop'; } b.vx*=ns/sp; b.vy*=ns/sp;
+  b.x+=b.vx*DT; b.y+=b.vy*DT;
+  for(i=0;i<h.solid.length;i++){ hit=collideRect(b,h.solid[i],0,0); if(hit>0.6){ ev='tap'; b.tapV=hit; } }
+  var sl=sliderAt(h,t); if(sl){ hit=collideRect(b,sl.r,0,sl.vy); if(hit>0.6){ ev='tap'; b.tapV=hit; } }
+  for(i=0;i<h.bump.length;i++) if(bumpCircle(b,h.bump[i])) ev='boing';
+  for(i=0;i<h.water.length;i++) if(inR(h.water[i],b.x,b.y)) return 'water';
+  dc=Math.hypot(b.cup[0]-b.x,b.cup[1]-b.y);
+  if(dc<b.cr){ if(Math.hypot(b.vx,b.vy)<CAP) return 'sink'; if(!b.lip){ b.lip=1; b.vx*=0.8; b.vy*=0.8; return 'lip'; } } else b.lip=0;
+  if(real) for(i=0;i<h.gems.length;i++) if(S.gems.indexOf(i)<0&&Math.hypot(h.gems[i][0]-b.x,h.gems[i][1]-b.y)<0.62){ b.gem=i; return 'gem'; }
+  return ev; }
+function launchVel(run,rise){ var D=Math.hypot(run,rise), v=Math.sqrt(2*FR*D); return [run/D*v, -rise/D*v]; }
+/* runs a putt ahead of time: the Guide Line power-up, the slope-shot check and the tests use it */
+function simulate(h,x,y,run,rise,t0,cr,mag){ var v=launchVel(run,rise), b={x:x,y:y,vx:v[0],vy:v[1],cup:S.cup||h.cup,cr:cr,mag:mag}, t=t0, path=[[x,y]], ev='';
+  for(var i=0;i<240*20;i++){ t+=DT; ev=phys(b,h,t,false); if(i%6===0) path.push([b.x,b.y]); if(ev==='stop'||ev==='sink'||ev==='water') break; }
+  path.push([b.x,b.y]); return { path:path, x:b.x, y:b.y, sunk:ev==='sink', water:ev==='water' }; }
+
+/* ---------- slope shots: pick the slope from the ball to the cup; the ball rolls along the slope you pick ---------- */
+function makeSS(h){ var t=h.tee, dir=t[0]<GW/2?1:-1;
+  for(var n=0;n<600;n++){ var run=ri(3,10)*dir, rise=ri(-4,5); if(rise===0||Math.abs(rise)===Math.abs(run)) continue;
+    var cx=t[0]+run, cy=t[1]-rise; if(cx<1.5||cx>GW-1.5||cy<5||cy>GH-1.5||Math.hypot(run,rise)>MAXD) continue;
+    if(h.water.some(function(r){ return inR([r[0]-1,r[1]-1,r[2]+2,r[3]+2],cx,cy); })||h.bump.some(function(c){ return Math.hypot(c[0]-cx,c[1]-cy)<c[2]+1; })) continue;
+    var m=R(rise,run), up=rise>0, r2=rise+(Math.random()<0.5?1:-1); if(r2===0) r2=rise+(rise>0?1:-1);
+    var ch=[ {m:m, ok:true, why:''},
+      {m:R(run,rise), why:'That is run over rise.'},
+      {m:R(-rise,run), why:'Check the sign: left to right, this line goes '+(m.n>0?'up.':'down.')},
+      {m:R(r2,run), why:'Count the rise again: the cup is '+Math.abs(rise)+' '+(up?'up':'down')+', not '+Math.abs(r2)+'.'} ];
+    if(ch.some(function(c,i){ return ch.some(function(d,j){ return j>i&&rEq(c.m,d.m); }); })) continue;   // four different slopes
+    if(ch.slice(1).some(function(c){ return rEq(c.m,m); })) continue;                                   // only one right answer
+    var save=S.cup; S.cup=[cx,cy]; var sim=simulate(h,t[0],t[1],run,rise,0,0.42,false); S.cup=save;
+    if(!sim.sunk) continue;                                                                              // the right slope really sinks it
+    for(var i=3;i>0;i--){ var j=Math.floor(Math.random()*(i+1)), tmp=ch[i]; ch[i]=ch[j]; ch[j]=tmp; }
+    return { run:run, rise:rise, cup:[cx,cy], ch:ch.map(function(c){ return {n:c.m.n,d:c.m.d,ok:!!c.ok,why:c.why}; }), state:'pick', pick:-1, msg:'', cls:'' }; }
+  throw new Error('no slope shot'); }
+/* the ball rolls along the picked slope, toward the cup's side, as far as the cup is */
+function ssVel(ss,c){ var s=ss.run>0?1:-1, D=Math.hypot(ss.run,ss.rise), L=Math.hypot(c.d,c.n), v=Math.sqrt(2*FR*D); return [s*c.d/L*v, -s*c.n/L*v]; }
+
+/* ================= GAME STATE ================= */
+var UPG=[
+  {id:'balls', name:'Ball Bucket', vals:FAST?[1,2,3,4]:[2,3,4,5], cost:[30,70,150], fmt:function(v){ return '+'+v+' ball'+(v>1?'s':''); }},
+  {id:'cash',  name:'Cash Bonus',  vals:FAST?[4,6,9,12]:[10,15,25,40], cost:[35,80,170], fmt:function(v){ return '$'+v+' per answer'; }},
+  {id:'cup',   name:'Big Cup',     vals:[0.42,0.52,0.62,0.74], cost:[30,65,140], fmt:function(v){ return ['Regular','Wide','Wider','Bucket'][[0.42,0.52,0.62,0.74].indexOf(v)]+' cup'; }},
+  {id:'mult',  name:'Score Multiplier', vals:[1,1.5,2,3], cost:[50,120,240], fmt:function(v){ return '×'+v+' points'; }}
+];
+var POW=[
+  {id:'guide',  name:'Guide Line', cost:25, secs:30, d:'See the path'},
+  {id:'free',   name:'Free Putts', cost:40, secs:20, d:'No ball cost'},
+  {id:'magnet', name:'Magnet Cup', cost:30, secs:25, d:'Pulls ball in'}
+];
+var S, B={x:0,y:0,vx:0,vy:0,moving:false,sunk:false,hidden:false};
+function fresh(){ return { name:'', len:5, started:false, over:false, endAt:0, score:0, balls:0, cash:0, streak:0, best:0, answered:0, correct:0, putts:0, holes:0, aces:0,
+  topics:QS?QS.topicTable():{}, lv:{balls:0,cash:0,cup:0,mult:0}, buff:{guide:0,free:0,magnet:0}, q:null, qDone:false, picked:-1,
+  hole:0, strokes:0, ball:null, from:null, aim:[3,0], card:[], gems:[], cup:null, ss:null, pending:false, finalShown:false }; }
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); localStorage.setItem(KEY+'_mute',muted?'1':'0'); }catch(e){} }
+function load(){ try{ var v=JSON.parse(localStorage.getItem(KEY)||'null'); muted=localStorage.getItem(KEY+'_mute')==='1'; if(v&&v.topics&&v.lv) return v; }catch(e){} return null; }
+function U(id){ var u=UPG.filter(function(x){ return x.id===id; })[0]; return u.vals[S.lv[id]]; }
+function now(){ return Date.now(); }
+function buffOn(id){ return S.buff[id]>now(); }
+function finalOn(){ return S.started&&!S.over&&S.endAt-now()<=30000; }
+
+/* ================= HUD ================= */
+function streakBonus(st){ return FAST? Math.min(Math.floor(st/5),4) : Math.min(Math.max(st-1,0),5)*2; }
+function hud(){ $('mg-score').textContent=S.score.toLocaleString(); $('mg-balls').textContent=buffOn('free')?'∞':S.balls; $('mg-cash').textContent='$'+S.cash; $('mg-streak').textContent=S.streak;
+  var empty=S.started&&!S.over&&S.balls<1&&!buffOn('free'); $('mg-ballchip').classList.toggle('empty',empty); $('mg-q').classList.toggle('need',empty);
+  var nb=U('balls'); $('mg-reward').textContent='+'+nb+' ball'+(nb>1?'s':'')+' · +$'+(U('cash')+streakBonus(S.streak+1));
+  $('mg-shopcash').textContent='$'+S.cash; if(!$('mg-shop').hidden) drawShop(); drawCard(); }
+function drawCard(){ var n=S.hole, base=n-n%9, h=hole(n), cells='';
+  for(var i=0;i<9;i++){ var hp=hole(base+i).par, st=S.card[i], cur=i===n%9&&!S.pending, cls=cur?' cur':st==null?'':st<hp?' under':st===hp?' par':' over';
+    cells+='<div class="mg-cell'+cls+'"><span class="hn">'+(base+i+1)+'</span><span class="st">'+(st!=null?st:cur&&S.strokes?S.strokes:'·')+'</span></div>'; }
+  $('mg-cells').innerHTML=cells; $('mg-nine').innerHTML=(Math.floor(n/9)%2?'BACK':'FRONT')+'<br>NINE';
+  $('mg-holeinfo').innerHTML='<b>Hole '+(n+1)+' · Par '+h.par+'</b><span>'+h.name+(S.strokes?' · stroke '+S.strokes:'')+'</span>'; }
+function timerDraw(){ var left=S.started? Math.max(0,S.endAt-now()) : S.len*60000, s=Math.ceil(left/1000);
+  $('mg-time').textContent=Math.floor(s/60)+':'+('0'+(s%60)).slice(-2); $('mg-timerchip').classList.toggle('low',S.started&&s<=30);
+  var b=''; POW.forEach(function(p){ if(buffOn(p.id)) b+='<span class="mg-buff">'+p.name+' '+Math.ceil((S.buff[p.id]-now())/1000)+'s</span>'; }); $('mg-buffs').innerHTML=b;
+  if(S.started&&!S.over&&left<=0){ endRun(); return; }
+  var fz=finalOn(); $('mg-course').classList.toggle('final',fz);
+  if(fz&&!S.finalShown){ S.finalShown=true; finalAt=now(); SND.final(); save(); }
+  if(S.ss&&S.ss.state==='done'&&S.ss.hideAt&&now()>S.ss.hideAt){ S.ss.hideAt=0; ssDraw(); }
+  if($('mg-balls').textContent!==(buffOn('free')?'∞':''+S.balls)) hud(); }
+
+/* ================= QUESTIONS UI ================= */
+var nextT=0, lockT=0;
+if(FAST) $('mg-q').classList.add('fast');
+function showQ(){ var q=S.q; $('mg-tag').textContent=q.topic; $('mg-prompt').innerHTML=q.prompt; $('mg-visual').innerHTML=q.visual||''; $('mg-q').classList.toggle('vis',!!q.visual);
+  $('mg-choices').innerHTML=q.choices.map(function(c,i){ return '<button class="mg-ch" data-i="'+i+'"><span class="k">'+(i+1)+'</span><span class="t">'+c.html+'</span></button>'; }).join('');
+  var fb=$('mg-fb'); if(!FAST){ fb.className='mg-fb'; fb.innerHTML='Answer correctly to earn golf balls and cash.'; } $('mg-next').disabled=true;
+  if(S.qDone) markAnswered(S.picked,false); hud(); }
+function newQ(){ clearTimeout(nextT); if(!QS) return; S.q=QS.next(); S.qDone=false; S.picked=-1; save(); showQ(); }
+function markAnswered(i,fresh){ var q=S.q, btns=$('mg-choices').querySelectorAll('.mg-ch'), c=q.choices[i], fb=$('mg-fb');
+  btns.forEach(function(b,j){ b.disabled=true; if(q.choices[j].ok) b.classList.add('right'); else if(j!==i&&!FAST) b.hidden=true; }); if(!c.ok) btns[i].classList.add('wrong');
+  if(c.ok){ fb.className='mg-fb ok'; fb.innerHTML='<span class="h">Correct!'+(fresh&&S.streak>1?' Streak '+S.streak+'.':'')+'</span>'+q.explain; $('mg-next').disabled=false; }
+  else { fb.className='mg-fb bad'; fb.innerHTML='<span class="h">Not quite.</span>'+c.why+(FAST?' ':'<br>')+q.explain;
+    $('mg-next').disabled=!!fresh; if(fresh&&!FAST){ clearTimeout(lockT); lockT=setTimeout(function(){ $('mg-next').disabled=false; },1800); } } }
+function answer(i){ if(!S.started||S.over||S.qDone||!S.q) return; var c=S.q.choices[i]; if(!c) return; S.qDone=true; S.picked=i; S.answered++;
+  if(!S.topics[S.q.topic]) S.topics[S.q.topic]=[0,0]; S.topics[S.q.topic][1]++;
+  var btn=$('mg-choices').querySelectorAll('.mg-ch')[i];
+  if(c.ok){ S.correct++; S.topics[S.q.topic][0]++; S.streak++; S.best=Math.max(S.best,S.streak); var nb=U('balls'), ca=U('cash')+streakBonus(S.streak);
+    S.balls+=nb; S.cash+=ca; SND.correct(); markAnswered(i,true);
+    if(FAST) nextT=setTimeout(function(){ if(S.qDone&&!S.over) newQ(); },150);
+    else { var p=stagePoint(btn,60,40); confetti(p[0],p[1],40,2.2); toast('+'+nb+' ball'+(nb>1?'s':'')+' · +$'+ca); nextT=setTimeout(function(){ if(S.qDone&&!S.over) newQ(); },1600); } }
+  else { S.streak=0; S.cash=Math.max(0,S.cash-(FAST?3:5)); SND.miss(); markAnswered(i,true);
+    if(FAST) nextT=setTimeout(function(){ if(S.qDone&&!S.over) newQ(); },1200); }
+  save(); hud(); }
+$('mg-choices').addEventListener('click',function(e){ var b=e.target.closest('.mg-ch'); if(b) answer(+b.dataset.i); });
+$('mg-next').addEventListener('click',function(){ if(S.qDone) newQ(); });
+
+/* ================= SHOP ================= */
+function drawShop(){ $('mg-shopcash').textContent='$'+S.cash;
+  $('mg-upg').innerHTML=UPG.map(function(u){ var l=S.lv[u.id], max=l>=u.cost.length, pr=max?0:u.cost[l];
+    return '<div class="mg-sc"><div class="top"><div class="n">'+u.name+'</div><div class="mg-pips">'+
+      [0,1,2,3].map(function(k){ return '<span class="'+(k<=l?'on':'')+'"></span>'; }).join('')+'</div></div><div class="d">'+u.fmt(u.vals[l])+(max?'':' → '+u.fmt(u.vals[l+1]))+'</div><button class="mg-buy" data-u="'+u.id+'"'+(max||S.cash<pr?' disabled':'')+'>'+(max?'Maxed':'Buy $'+pr)+'</button></div>'; }).join('');
+  $('mg-pow').innerHTML=POW.map(function(p){ var on=buffOn(p.id);
+    return '<div class="mg-sc"><div class="n">'+p.name+'</div><div class="d">'+p.d+' ('+p.secs+'s)</div><button class="mg-buy" data-p="'+p.id+'"'+(on||S.cash<p.cost?' disabled':'')+'>'+(on?'Active':'Buy $'+p.cost)+'</button></div>'; }).join(''); }
+function openShop(o){ if(!S.started||S.over) return; if(o) CH.on=false; $('mg-shop').hidden=!o; if(o) drawShop(); }
+$('mg-shopbtn').addEventListener('click',function(){ openShop($('mg-shop').hidden); });
+$('mg-shopx').addEventListener('click',function(){ openShop(false); });
+$('mg-shop').addEventListener('click',function(e){ var b=e.target.closest('.mg-buy'); if(!b||b.disabled) return;
+  if(b.dataset.u){ var u=UPG.filter(function(x){ return x.id===b.dataset.u; })[0], pr=u.cost[S.lv[u.id]]; if(S.cash<pr) return; S.cash-=pr; S.lv[u.id]++; toast(u.name+' upgraded!'); }
+  else { var p=POW.filter(function(x){ return x.id===b.dataset.p; })[0]; if(S.cash<p.cost) return; S.cash-=p.cost; S.buff[p.id]=now()+p.secs*1000; toast(p.name+'!'); timerDraw(); }
+  SND.cash(); guideKey=''; save(); hud(); drawShop(); });
+
+/* ================= THE GREEN ================= */
+var cv=$('mg-canvas'), cx=cv.getContext('2d'), turf=document.createElement('canvas'); turf.width=W; turf.height=H; var tx=turf.getContext('2d');
+var pops=[], finalAt=0, gt=0, rollT=0, hov=null, ghostAt=0, guideKey='', guide=null, sinkAt=0;
+function X(x){ return OX+x*UN; } function Y(y){ return OY+y*UN; }
+function rr(c,x,y,w,h,r){ c.beginPath(); if(c.roundRect) c.roundRect(x,y,w,h,r); else c.rect(x,y,w,h); }
+function FONT(w,px){ return w+' '+px+'px Fredoka, Inter, sans-serif'; }
+function drawTurf(){ var h=hole(S.hole), c=tx, i;
+  var g=c.createRadialGradient(W/2,H/2,80,W/2,H/2,720); g.addColorStop(0,'#10261C'); g.addColorStop(1,'#050D09'); c.fillStyle=g; c.fillRect(0,0,W,H);
+  c.fillStyle='rgba(0,0,0,.45)'; rr(c,X(-0.4)+8,Y(-0.4)+10,GW*UN+0.8*UN,GH*UN+0.8*UN,22); c.fill();
+  c.fillStyle='#EADBB6'; rr(c,X(-0.4),Y(-0.4),GW*UN+0.8*UN,GH*UN+0.8*UN,22); c.fill();                                     // rails
+  c.fillStyle='#CDBB92'; rr(c,X(-0.4),Y(GH)+2,GW*UN+0.8*UN,0.4*UN-2,[0,0,22,22]); c.fill();
+  for(i=0;i<GW;i+=2){ c.fillStyle=i%4?'#1B6B42':'#1F784A'; c.fillRect(X(i),Y(0),Math.min(2,GW-i)*UN,GH*UN); }          // mowing stripes
+  c.strokeStyle='rgba(255,255,255,.09)'; c.lineWidth=1.5; c.beginPath();                                                 // the grid: count rise and run on it
+  for(i=1;i<GW;i++){ c.moveTo(X(i),Y(0)); c.lineTo(X(i),Y(GH)); } for(i=1;i<GH;i++){ c.moveTo(X(0),Y(i)); c.lineTo(X(GW),Y(i)); } c.stroke();
+  h.hills.forEach(function(hl){ var r=hl.r; c.fillStyle='rgba(255,255,255,.05)'; c.fillRect(X(r[0]),Y(r[1]),r[2]*UN,r[3]*UN);
+    var a=Math.atan2(hl.p[1],hl.p[0]); c.strokeStyle='rgba(234,219,182,.28)'; c.lineWidth=4; c.lineCap='round';
+    for(var gx=r[0]+1;gx<r[0]+r[2];gx+=2) for(var gy=r[1]+1;gy<r[1]+r[3];gy+=2){ c.save(); c.translate(X(gx),Y(gy)); c.rotate(a); c.beginPath(); c.moveTo(-8,-10); c.lineTo(4,0); c.lineTo(-8,10); c.stroke(); c.restore(); } });
+  h.sand.forEach(function(r){ c.fillStyle='#E4C88C'; rr(c,X(r[0]),Y(r[1]),r[2]*UN,r[3]*UN,40); c.fill(); c.fillStyle='rgba(120,90,40,.25)';
+    for(var k=0;k<160;k++){ c.fillRect(X(r[0])+20+Math.random()*(r[2]*UN-40),Y(r[1])+20+Math.random()*(r[3]*UN-40),3,3); } });
+  h.water.forEach(function(r){ c.fillStyle='#1B5FA6'; c.fillRect(X(r[0]),Y(r[1]),r[2]*UN,r[3]*UN); c.strokeStyle='rgba(180,220,255,.35)'; c.lineWidth=3;
+    for(var y=r[1]+0.6;y<r[1]+r[3];y+=1.1) for(var x=r[0]+0.5;x<r[0]+r[2]-0.6;x+=1.6){ c.beginPath(); c.moveTo(X(x),Y(y)); c.quadraticCurveTo(X(x+0.3),Y(y-0.18),X(x+0.6),Y(y)); c.stroke(); } });
+  h.walls.forEach(function(r){ c.fillStyle='rgba(0,0,0,.35)'; c.fillRect(X(r[0])+5,Y(r[1])+6,r[2]*UN,r[3]*UN); c.fillStyle='#EADBB6'; c.fillRect(X(r[0]),Y(r[1]),r[2]*UN,r[3]*UN);
+    c.strokeStyle='#B9A67C'; c.lineWidth=3; c.strokeRect(X(r[0])+1.5,Y(r[1])+1.5,r[2]*UN-3,r[3]*UN-3); });
+  var t=h.tee; c.fillStyle='rgba(92,242,176,.22)'; rr(c,X(t[0])-30,Y(t[1])-30,60,60,12); c.fill(); }
+function draw(){ var h=hole(S.hole), t=now(), i;
+  cx.drawImage(turf,0,0);
+  h.gems.forEach(function(g,i){ if(S.gems.indexOf(i)>=0) return; var x=X(g[0]), y=Y(g[1]), k=Math.sin(t/300+i)*3; cx.save(); cx.translate(x,y+k);
+    cx.fillStyle='rgba(92,242,176,.25)'; cx.beginPath(); cx.arc(0,0,22,0,6.28); cx.fill(); cx.fillStyle='#5CF2B0'; cx.beginPath(); cx.moveTo(0,-15); cx.lineTo(12,0); cx.lineTo(0,15); cx.lineTo(-12,0); cx.closePath(); cx.fill();
+    cx.fillStyle='rgba(255,255,255,.7)'; cx.beginPath(); cx.moveTo(0,-15); cx.lineTo(5,-3); cx.lineTo(-5,-3); cx.closePath(); cx.fill(); cx.restore(); });
+  var sl=sliderAt(h,gt); if(sl){ var r=sl.r; cx.fillStyle='rgba(0,0,0,.35)'; cx.fillRect(X(r[0])+5,Y(r[1])+6,r[2]*UN,r[3]*UN); cx.fillStyle='#B9A4FF'; cx.fillRect(X(r[0]),Y(r[1]),r[2]*UN,r[3]*UN);
+    cx.strokeStyle='#7F69D6'; cx.lineWidth=5; for(var s=0;s<r[3]*UN;s+=18){ cx.beginPath(); cx.moveTo(X(r[0])+4,Y(r[1])+s+4); cx.lineTo(X(r[0]+r[2])-4,Y(r[1])+Math.min(s+20,r[3]*UN-4)); cx.stroke(); } }
+  h.bump.forEach(function(b){ cx.fillStyle='rgba(0,0,0,.35)'; cx.beginPath(); cx.arc(X(b[0])+4,Y(b[1])+6,b[2]*UN,0,6.28); cx.fill();
+    cx.fillStyle='#FF8466'; cx.beginPath(); cx.arc(X(b[0]),Y(b[1]),b[2]*UN,0,6.28); cx.fill(); cx.strokeStyle='#fff'; cx.lineWidth=4; cx.beginPath(); cx.arc(X(b[0]),Y(b[1]),b[2]*UN*0.62,0,6.28); cx.stroke(); });
+  // the cup and its flag
+  var cup=S.cup||h.cup, cr=U('cup')*UN, near=Math.hypot(B.x-cup[0],B.y-cup[1])<2.2;
+  cx.fillStyle='#03080A'; cx.beginPath(); cx.arc(X(cup[0]),Y(cup[1]),cr,0,6.28); cx.fill(); cx.strokeStyle='rgba(255,255,255,.85)'; cx.lineWidth=3; cx.stroke();
+  // the slope shot: the right line, shown after a miss
+  var ss=S.ss; if(ss&&ss.state==='done'&&t-ghostAt<4500&&ghostAt){ cx.save(); cx.setLineDash([14,10]); cx.strokeStyle='#FFC82E'; cx.lineWidth=5; cx.beginPath(); cx.moveTo(X(h.tee[0]),Y(h.tee[1])); cx.lineTo(X(cup[0]),Y(cup[1])); cx.stroke(); cx.restore(); }
+  if(ss&&ss.state==='pick'){ cx.fillStyle='rgba(255,240,77,.9)'; [[h.tee[0],h.tee[1]]].forEach(function(p){ cx.beginPath(); cx.arc(X(p[0]),Y(p[1]),7,0,6.28); cx.fill(); }); }
+  if(ready()&&!(ss&&ss.state!=='done')){ if(buffOn('guide')) drawGuide(h); drawAim(); drawMeter(); }
+  // ball
+  if(!B.hidden){ var bx=X(B.x), by=Y(B.y), br=BR*UN, k=1;
+    if(B.sunk){ k=Math.max(0,1-(t-sinkAt)/260); bx=X(cup[0])+(bx-X(cup[0]))*k; by=Y(cup[1])+(by-Y(cup[1]))*k; }
+    if(k>0){ cx.fillStyle='rgba(0,0,0,.35)'; cx.beginPath(); cx.arc(bx+3,by+5,br*k,0,6.28); cx.fill();
+      var bg=cx.createRadialGradient(bx-br*0.35,by-br*0.4,1,bx,by,br*k); bg.addColorStop(0,'#fff'); bg.addColorStop(1,'#C9D4CD'); cx.fillStyle=bg; cx.beginPath(); cx.arc(bx,by,br*k,0,6.28); cx.fill();
+      if(ready()){ cx.strokeStyle='rgba(255,255,255,'+(0.35+0.25*Math.sin(t/220))+')'; cx.lineWidth=3; cx.beginPath(); cx.arc(bx,by,br+8,0,6.28); cx.stroke(); } } }
+  // flag on top (it fades when the ball is close, so the cup stays visible)
+  cx.globalAlpha=near?0.35:1; cx.strokeStyle='#F2FBF6'; cx.lineWidth=4; cx.beginPath(); cx.moveTo(X(cup[0]),Y(cup[1])); cx.lineTo(X(cup[0]),Y(cup[1])-78); cx.stroke();
+  var wv=Math.sin(t/260)*4; cx.fillStyle='#FF8466'; cx.beginPath(); cx.moveTo(X(cup[0])+2,Y(cup[1])-78); cx.lineTo(X(cup[0])+44,Y(cup[1])-66+wv); cx.lineTo(X(cup[0])+2,Y(cup[1])-52); cx.closePath(); cx.fill();
+  cx.fillStyle='#062016'; cx.font=FONT(700,18); cx.textAlign='center'; cx.textBaseline='middle'; cx.fillText(''+(S.hole+1),X(cup[0])+18,Y(cup[1])-65+wv/2); cx.globalAlpha=1;
+  // popups
+  pops=pops.filter(function(p){ return t-p.t0<1400; });
+  pops.forEach(function(p){ var k=(t-p.t0)/1400, y=p.y-k*60; cx.globalAlpha=Math.min(1,(1-k)*2.5); cx.textAlign='center'; cx.textBaseline='alphabetic'; cx.lineWidth=8; cx.strokeStyle='#04100A';
+    if(p.lab){ cx.font=FONT(700,40); cx.strokeText(p.lab,p.x,y-50); cx.fillStyle=p.col||'#FFC82E'; cx.fillText(p.lab,p.x,y-50); }
+    cx.font=FONT(700,46); cx.strokeText(p.txt,p.x,y); cx.fillStyle='#fff'; cx.fillText(p.txt,p.x,y); cx.globalAlpha=1; });
+  if(t-finalAt<2400){ var fk=(t-finalAt)/2400; cx.globalAlpha=Math.min(1,(1-fk)*3); cx.textAlign='center'; cx.textBaseline='alphabetic'; cx.lineWidth=10; cx.strokeStyle='#04100A';
+    cx.font=FONT(700,80); cx.strokeText('FINAL 30!',W/2,400); cx.fillStyle='#FF8466'; cx.fillText('FINAL 30!',W/2,400);
+    cx.font=FONT(700,46); cx.strokeText('DOUBLE POINTS',W/2,466); cx.fillStyle='#FFF04D'; cx.fillText('DOUBLE POINTS',W/2,466); cx.globalAlpha=1; }
+  if(S.started&&!S.over&&outOfBalls()&&!B.moving&&!S.pending&&!(ss&&ss.state==='pick')){ cx.fillStyle='rgba(4,10,7,.82)'; rr(cx,W/2-360,H/2-100,720,200,24); cx.fill(); cx.strokeStyle='#FF7A7A'; cx.lineWidth=4; cx.stroke();
+    cx.textAlign='center'; cx.textBaseline='alphabetic'; cx.fillStyle='#fff'; cx.font=FONT(700,58); cx.fillText('OUT OF BALLS',W/2,H/2-12); cx.font='700 34px Inter, sans-serif'; cx.fillStyle='#5CF2B0'; cx.fillText('←  Answer a question to get more',W/2,H/2+50); } }
+function drawMeter(){ var w=300, hgt=34, x=clamp(X(B.x)-w/2,14,W-w-14), y=Y(B.y)+38; if(y+hgt+30>H) y=Y(B.y)-38-hgt-30;
+  var p=CH.on?meter():0, mark=x+w/PMAX;
+  cx.fillStyle='rgba(4,10,7,.88)'; rr(cx,x-8,y-8,w+16,hgt+40,14); cx.fill();
+  var g=cx.createLinearGradient(x,0,x+w,0); g.addColorStop(0,'#5CF2B0'); g.addColorStop(0.7,'#FFC82E'); g.addColorStop(1,'#FF7A7A');
+  cx.fillStyle='rgba(255,255,255,.12)'; rr(cx,x,y,w,hgt,10); cx.fill(); if(p>0){ cx.fillStyle=g; rr(cx,x,y,Math.max(8,w*p/PMAX),hgt,10); cx.fill(); }
+  cx.fillStyle='#FFF04D'; cx.fillRect(mark-2,y-5,4,hgt+10);                                                   // 100%: stops on the yellow dot
+  cx.font='800 20px Inter, sans-serif'; cx.textBaseline='middle'; cx.textAlign='left'; cx.fillStyle='#F2FBF6';
+  cx.fillText(CH.on?'Power '+Math.round(p*100)+'%':'Hold Space to power up',x,y+hgt+16); cx.textAlign='right'; cx.fillStyle='#FFF04D'; cx.fillText('100%',x+w,y+hgt+16); }
+/* the aim: the red line to where the ball will stop, with its rise and run */
+function drawAim(){ var run=S.aim[0], rise=S.aim[1], bx=X(B.x), by=Y(B.y), ax=X(B.x+run), ay=Y(B.y-rise);
+  if(hov&&(hov[0]!==run||hov[1]!==rise)){ cx.strokeStyle='rgba(255,240,77,.45)'; cx.lineWidth=3; cx.beginPath(); cx.arc(X(B.x+hov[0]),Y(B.y-hov[1]),12,0,6.28); cx.stroke(); }
+  if(!run&&!rise) return;
+  cx.save(); cx.setLineDash([10,8]); cx.strokeStyle='#FFC82E'; cx.lineWidth=3.5; cx.beginPath(); cx.moveTo(bx,by); cx.lineTo(ax,by); cx.lineTo(ax,ay); cx.stroke(); cx.restore();
+  cx.fillStyle='#FFC82E'; var i, sx=run>0?1:-1, sy=rise>0?-1:1;                                                    // a tick at every unit, for counting
+  for(i=1;i<Math.abs(run);i++){ cx.fillRect(bx+sx*i*UN-2,by-7,4,14); } for(i=1;i<Math.abs(rise);i++){ cx.fillRect(ax-7,by+sy*i*UN-2,14,4); }
+  cx.strokeStyle='#FF4B4B'; cx.lineWidth=5; cx.lineCap='round'; cx.beginPath(); cx.moveTo(bx,by); cx.lineTo(ax,ay); cx.stroke();
+  cx.fillStyle='#FFF04D'; cx.strokeStyle='#04100A'; cx.lineWidth=3; cx.beginPath(); cx.arc(ax,ay,10,0,6.28); cx.fill(); cx.stroke();
+  cx.font='800 24px Inter, sans-serif'; cx.textBaseline='middle'; cx.lineWidth=6; cx.strokeStyle='#04100A';
+  if(run){ cx.textAlign='center'; var ly=by+(rise>0?28:-28); cx.strokeText('run '+num(run),(bx+ax)/2,ly); cx.fillStyle='#FFC82E'; cx.fillText('run '+num(run),(bx+ax)/2,ly); }
+  if(rise){ cx.textAlign=run>=0?'left':'right'; var lx=ax+(run>=0?16:-16); cx.strokeText('rise '+num(rise),lx,(by+ay)/2); cx.fillStyle='#FFC82E'; cx.fillText('rise '+num(rise),lx,(by+ay)/2); }
+  // slope label beside the aim point
+  var m=run?R(rise,run):null, lab='slope', w=m&&m.d>1?150:run?120:220, px=clamp(ax+(run>=0?24:-24-w),6,W-w-6), py=clamp(ay+(rise>0?-74:18),6,H-62);
+  cx.fillStyle='rgba(4,10,7,.88)'; rr(cx,px,py,w,56,14); cx.fill(); cx.strokeStyle='#FFC82E'; cx.lineWidth=2; cx.stroke();
+  cx.fillStyle='#FFC82E'; cx.textAlign='left'; cx.font='800 22px Inter, sans-serif'; cx.fillText(lab,px+12,py+28);
+  var vx=px+80; if(!m){ cx.font='800 22px Inter, sans-serif'; cx.fillText('undefined',px+82,py+28); }
+  else if(m.d===1){ cx.font='800 30px Inter, sans-serif'; cx.fillText(num(m.n),vx,py+29); }
+  else { cx.font='800 22px Inter, sans-serif'; var sg=m.n<0?MINUS:'', top=''+Math.abs(m.n), bot=''+m.d, fw=Math.max(cx.measureText(top).width,cx.measureText(bot).width), fx=vx+(sg?cx.measureText(sg).width+4:0);
+    if(sg) cx.fillText(sg,vx,py+28); cx.textAlign='center'; cx.fillText(top,fx+fw/2,py+15); cx.fillText(bot,fx+fw/2,py+43); cx.fillRect(fx-2,py+27,fw+4,3); } }
+function drawGuide(h){ var k=[S.hole,B.x.toFixed(3),B.y.toFixed(3),S.aim[0],S.aim[1],h.slider?Math.round(gt*10):0,S.lv.cup,buffOn('magnet')].join(',');
+  if(k!==guideKey){ guideKey=k; guide=(S.aim[0]||S.aim[1])? simulate(h,B.x,B.y,S.aim[0],S.aim[1],gt,U('cup'),buffOn('magnet')) : null; }
+  if(!guide) return; cx.fillStyle='rgba(255,255,255,.75)'; guide.path.forEach(function(p,i){ if(i%3===0){ cx.beginPath(); cx.arc(X(p[0]),Y(p[1]),3.5,0,6.28); cx.fill(); } }); }
+
+/* ---------- putting ---------- */
+function outOfBalls(){ return S.balls<1&&!buffOn('free'); }
+function ready(){ return !!(S.started&&!S.over&&!B.moving&&!B.sunk&&!B.hidden&&!S.pending&&$('mg-shop').hidden&&!(S.ss&&S.ss.state==='pick')); }
+function nudge(){ SND.empty(); var q=$('mg-q'); q.classList.remove('nudge'); void q.offsetWidth; q.classList.add('nudge'); }
+function setAim(run,rise){ var L=Math.hypot(run,rise); if(L>MAXD){ run=Math.round(run*MAXD/L); rise=Math.round(rise*MAXD/L); }
+  while(Math.hypot(run,rise)>MAXD){ if(Math.abs(run)>Math.abs(rise)) run-=Math.sign(run); else rise-=Math.sign(rise); }
+  S.aim=[run,rise]; }
+function startRoll(vx,vy){ var h=hole(S.hole); B.vx=vx; B.vy=vy; B.moving=true; B.cup=S.cup; B.cr=U('cup'); B.mag=buffOn('magnet'); B.lip=0; rollT=0; S.from=[B.x,B.y]; S.strokes++; SND.putt(); }
+function putt(pw){ if(!ready()) return false; var run=S.aim[0], rise=S.aim[1]; if(!run&&!rise) return false;
+  if(outOfBalls()){ nudge(); return false; } if(!buffOn('free')) S.balls--; S.putts++; if(pw==null) pw=1; lastPow=pw;
+  var v=launchVel(run,rise), k=Math.sqrt(Math.max(0.03,pw)); startRoll(v[0]*k,v[1]*k); save(); hud(); return true; }   // power p rolls the ball p × the aim distance
+/* ---------- power: hold Space (or hold the spot, or the Putt button) and let go. The meter swings 0 → 125% and back; 100% stops on the yellow dot ---------- */
+var CH={on:false,t0:0,src:''}, lastPow=1, PMAX=1.25, PUP=1.1;
+function meter(){ var ph=((now()-CH.t0)/1000/PUP)%2; return (ph<1?ph:2-ph)*PMAX; }
+function chargeStart(src){ if(CH.on||!ready()||!(S.aim[0]||S.aim[1])) return false; if(outOfBalls()){ nudge(); return false; } CH.on=true; CH.t0=now(); CH.src=src; SND.tick(); return true; }
+function chargeEnd(src){ if(!CH.on||(src&&CH.src!==src)) return; var p=meter(); CH.on=false; if(now()-CH.t0<150){ toast('Hold to power up, then let go'); return; } if(ready()) putt(p); }   // a quick tap never wastes a ball
+function chargeCancel(){ CH.on=false; }
+function settle(){ B.moving=false; S.ball=[B.x,B.y]; if(S.ss&&S.ss.state==='roll') ssResult(false);
+  if(S.strokes>=hole(S.hole).par+3){ pickUp(); return; } save(); hud(); }
+function sink(){ B.moving=false; B.sunk=true; sinkAt=now(); SND.cup(); if(S.ss&&S.ss.state==='roll') ssResult(true); holeDone(); }
+function holePoints(st,par){ var d=st-par; return st===1?[500,'HOLE IN ONE!']:d<=-2?[400,'EAGLE!']:d===-1?[300,'BIRDIE!']:d===0?[200,'PAR']:d===1?[100,'BOGEY']:d===2?[60,'DOUBLE BOGEY']:[40,'IN THE CUP']; }
+function holeDone(){ var h=hole(S.hole), hp=holePoints(S.strokes,h.par), pts=Math.round(hp[0]*U('mult')*(finalOn()?2:1)), cup=S.cup;
+  S.score+=pts; S.card[S.hole%9]=S.strokes; S.holes++; if(S.strokes===1) S.aces++; S.pending=true;
+  pops.push({x:X(cup[0]),y:Y(cup[1])-40,t0:now(),txt:'+'+pts,lab:hp[1],col:S.strokes<h.par?'#5CF2B0':'#FFC82E'});
+  if(S.strokes===1){ SND.ace(); var p=stagePoint(cv,X(cup[0]),Y(cup[1])); confetti(p[0],p[1],130,2.8); } else if(S.strokes<h.par){ SND.sunk(); var p2=stagePoint(cv,X(cup[0]),Y(cup[1])); confetti(p2[0],p2[1],50,2.4); } else SND.sunk();
+  save(); hud(); setTimeout(nextHole,1900); }
+function pickUp(){ var pts=Math.round(25*U('mult')*(finalOn()?2:1)); S.score+=pts; S.card[S.hole%9]=S.strokes; S.holes++; S.pending=true;
+  pops.push({x:X(B.x),y:Y(B.y)-40,t0:now(),txt:'+'+pts,lab:'PICKED UP',col:'#FF8466'}); toast('Out of strokes on this hole. On to the next!'); save(); hud(); setTimeout(nextHole,1900); }
+function nextHole(){ if(!S.pending||S.over) return; S.pending=false; startHole(S.hole+1); }
+function startHole(n){ var h=hole(n); S.hole=n; S.strokes=0; S.gems=[]; if(n%9===0) S.card=[];
+  if(h.slope){ S.ss=makeSS(h); S.cup=S.ss.cup.slice(); } else { S.ss=null; S.cup=h.cup.slice(); }
+  S.ball=h.tee.slice(); S.from=h.tee.slice(); S.aim=[S.cup[0]>=h.tee[0]?3:-3,0]; guideKey=''; placeBall(); drawTurf(); ssDraw(); if(h.slope) SND.slope(); save(); hud(); }
+function placeBall(){ B.x=S.ball[0]; B.y=S.ball[1]; B.vx=B.vy=0; B.moving=false; B.sunk=false; B.hidden=false; }
+function splash(){ B.moving=false; B.hidden=true; SND.splash(); pops.push({x:X(B.x),y:Y(B.y)-20,t0:now(),txt:'SPLASH!',lab:'',col:''});
+  if(S.ss&&S.ss.state==='roll') ssResult(false);
+  setTimeout(function(){ if(S.over) return; B.x=S.from[0]; B.y=S.from[1]; B.hidden=false; S.ball=S.from.slice(); if(S.strokes>=hole(S.hole).par+3){ pickUp(); return; } save(); hud(); },900); }
+function gem(i){ S.gems.push(i); var pts=Math.round(50*U('mult')*(finalOn()?2:1)); S.score+=pts; var g=hole(S.hole).gems[i]; pops.push({x:X(g[0]),y:Y(g[1])-20,t0:now(),txt:'+'+pts,lab:'',col:''}); SND.gem(); hud(); }
+
+/* ---------- slope shot ---------- */
+function ssDraw(){ var ss=S.ss, el=$('mg-ss'); if(!ss||(ss.state==='done'&&!ss.hideAt)){ el.hidden=true; return; } el.hidden=false; el.classList.toggle('done',ss.state==='done');
+  $('mg-sschoices').innerHTML=ss.ch.map(function(c,i){ var cls=ss.pick>=0?(c.ok?' right':i===ss.pick?' wrong':''):'';
+    return '<button class="mg-ssb'+cls+'" data-i="'+i+'"'+(ss.state!=='pick'?' disabled':'')+'><span class="k">'+'ABCD'[i]+'</span><span>'+fmtR(c)+'</span></button>'; }).join('');
+  var m=$('mg-ssmsg'); m.className='mg-ssmsg '+(ss.cls||''); m.innerHTML=ss.msg||''; }
+function ssPick(i){ var ss=S.ss; if(!ss||ss.state!=='pick'||!S.started||S.over||!$('mg-shop').hidden||B.moving) return; var c=ss.ch[i]; if(!c) return;
+  ss.pick=i; ss.state='roll'; ss.msg='Rolling along slope '+fmtR(c)+'…'; ss.cls=''; ssDraw(); var v=ssVel(ss,c); startRoll(v[0],v[1]); }
+function ssResult(sunk){ var ss=S.ss, c=ss.ch[ss.pick], right=ss.ch.filter(function(x){ return x.ok; })[0], ex='Rise '+num(ss.rise)+' over run '+num(ss.run)+' = '+fmtR(R(ss.rise,ss.run))+'.';
+  ss.state='done'; ss.hideAt=now()+(sunk?2600:6500);
+  if(sunk){ ss.msg='Nailed it! '+ex; ss.cls='ok'; }
+  else { ss.msg=(c.ok?'Right slope, but it did not drop. ':'Not '+fmtR(c)+'. '+c.why+' ')+ex; ss.cls='bad'; ghostAt=now(); }
+  ssDraw(); }
+$('mg-sschoices').addEventListener('click',function(e){ var b=e.target.closest('.mg-ssb'); if(b&&!b.disabled) ssPick(+b.dataset.i); });
+
+/* ---------- the loop ---------- */
+function update(dt){ var h=hole(S.hole);
+  if(!B.moving){ gt+=dt;
+    var sl=sliderAt(h,gt); if(sl&&!B.hidden&&!B.sunk){ var r=sl.r; if(B.x>r[0]-BR&&B.x<r[0]+r[2]+BR&&B.y>r[1]-BR&&B.y<r[1]+r[3]+BR){ B.x=B.x<r[0]+r[2]/2? r[0]-BR-0.01 : r[0]+r[2]+BR+0.01; S.ball=[B.x,B.y]; guideKey=''; } }
+    return; }
+  var n=Math.max(1,Math.round(dt/DT)); rollT+=dt;
+  for(var i=0;i<n;i++){ gt+=DT; var ev=phys(B,h,gt,true);
+    if(ev==='tap') tapSnd(B.tapV); else if(ev==='boing') SND.boing(); else if(ev==='lip') SND.lip(); else if(ev==='gem') gem(B.gem);
+    else if(ev==='water'){ splash(); return; } else if(ev==='sink'){ sink(); return; } else if(ev==='stop'){ settle(); return; } }
+  if(rollT>20){ B.vx=B.vy=0; settle(); } }
+var lastF=now(); function loop(){ var t=now(), dt=Math.min(0.05,(t-lastF)/1000); lastF=t; if(S.started&&!S.over) update(dt); draw();
+  var pb=$('mg-putt'), rd=ready()&&!!(S.aim[0]||S.aim[1]); if(pb.disabled===rd){ pb.disabled=!rd; pb.classList.toggle('ready',rd); } requestAnimationFrame(loop); }
+function unitPt(e){ var r=cv.getBoundingClientRect(); return [((e.clientX-r.left)*W/r.width-OX)/UN, ((e.clientY-r.top)*H/r.height-OY)/UN]; }
+function snapFrom(p){ var run=Math.round(p[0]-B.x), rise=Math.round(B.y-p[1]), L=Math.hypot(run,rise);
+  if(L>MAXD){ var dx=p[0]-B.x, dy=B.y-p[1], k=MAXD/Math.hypot(dx,dy); run=Math.round(dx*k); rise=Math.round(dy*k); } return [run,rise]; }
+cv.addEventListener('pointermove',function(e){ if(e.pointerType!=='mouse'||!ready()){ hov=null; return; } var s=snapFrom(unitPt(e)); hov=s; });
+cv.addEventListener('pointerleave',function(){ hov=null; });
+cv.addEventListener('pointerdown',function(e){ e.preventDefault(); if(!S.started||S.over) return; if(!ready()){ if(outOfBalls()) nudge(); return; }
+  var s=snapFrom(unitPt(e)); if(!s[0]&&!s[1]) return;
+  if(s[0]===S.aim[0]&&s[1]===S.aim[1]){ chargeStart('ptr'); return; }                               // press and hold the aim spot to power up; let go to putt
+  setAim(s[0],s[1]); save(); });
+$('mg-putt').addEventListener('pointerdown',function(e){ e.preventDefault(); chargeStart('ptr'); });
+addEventListener('pointerup',function(){ chargeEnd('ptr'); }); addEventListener('pointercancel',function(){ chargeEnd('ptr'); });
+addEventListener('keyup',function(e){ if(e.key===' ') chargeEnd('key'); }); addEventListener('blur',function(){ chargeCancel(); });
+
+/* ================= START / END ================= */
+$('mg-nameinput').addEventListener('input',function(){ $('mg-go').disabled=!this.value.trim(); });
+$('mg-nameinput').addEventListener('keydown',function(e){ if(e.key==='Enter'&&this.value.trim()) $('mg-go').click(); });
+$('mg-go').addEventListener('click',function(){ var n=$('mg-nameinput').value.trim(); if(!n) return; ac(); S.name=n; S.started=true; S.endAt=now()+S.len*60000; $('mg-start').hidden=true;
+  $('mg-nameinput').blur(); startHole(0); newQ(); save(); hud(); });
+function endRun(){ S.over=true; S.pending=false; B.moving=false; clearTimeout(nextT); $('mg-shop').hidden=true; $('mg-course').classList.remove('final'); save(); showEnd(true); }
+function showEnd(celebrate){ $('mg-endname').textContent=S.name; $('mg-endscore').textContent=S.score.toLocaleString();
+  var acc=S.answered?Math.round(100*S.correct/S.answered):0;
+  $('mg-endstats').innerHTML=[['Correct',S.correct+' / '+S.answered],['Accuracy',acc+'%'],['Best streak',S.best],['Holes played',S.holes],['Holes in one',S.aces]].map(function(a){ return '<div class="mg-stat"><div class="l">'+a[0]+'</div><div class="v">'+a[1]+'</div></div>'; }).join('');
+  $('mg-endtopics').innerHTML=Object.keys(S.topics).map(function(k){ var t=S.topics[k]; return '<div class="mg-stat"><div class="l">'+k+'</div><div class="v">'+t[0]+' / '+t[1]+'</div></div>'; }).join('');
+  /* LEADERBOARD HOOK: the shared score code (scorecode.js) shows the student's code here */
+  if(window.SpitzCode&&SpitzCode.show) try{ SpitzCode.show('mg','mini_golf',S); }catch(e){}
+  $('mg-end').hidden=false; if(celebrate){ SND.win(); [0,350,700,1100].forEach(function(ms,i){ setTimeout(function(){ confetti(200+i*500,1070,90,1.3); confetti(1720-i*500,1070,90,1.3); },ms); }); } }
+var armT=0; $('mg-again').addEventListener('click',function(){ var b=this; if(!b.classList.contains('arm')){ b.classList.add('arm'); b.textContent='Tap again to start over'; clearTimeout(armT); armT=setTimeout(function(){ b.classList.remove('arm'); b.textContent='Play again'; },3000); return; }
+  b.classList.remove('arm'); b.textContent='Play again'; var keepName=S.name; S=fresh(); S.name=keepName; pops=[]; S.ball=hole(0).tee.slice(); S.cup=hole(0).cup.slice(); placeBall();
+  $('mg-end').hidden=true; $('mg-start').hidden=false; $('mg-nameinput').value=keepName; $('mg-go').disabled=!keepName; $('mg-ss').hidden=true; drawTurf(); save(); hud(); timerDraw();
+  $('mg-choices').innerHTML=''; $('mg-prompt').innerHTML=''; $('mg-visual').innerHTML=''; });
+
+/* ================= KEYS ================= */
+function fullscreen(){ var d=document, e=d.documentElement; if(d.fullscreenElement||d.webkitFullscreenElement) (d.exitFullscreen||d.webkitExitFullscreen).call(d);
+  else { var r=e.requestFullscreen||e.webkitRequestFullscreen; if(r){ var p=r.call(e); if(p&&p.catch) p.catch(function(){}); } } }
+function k0(e){ return (e.key||'').toLowerCase(); }
+document.addEventListener('keydown',function(e){ if(e.metaKey||e.ctrlKey||e.altKey) return; if(e.target&&/^(INPUT|TEXTAREA)$/.test(e.target.tagName)) return;
+  if(!$('sz-ask').hidden){ e.preventDefault(); if(k0(e)==='y') newRun(); else if(k0(e)==='n'||e.key==='Escape') askNew(false); return; }
+  if(k0(e)==='r'&&e.shiftKey){ e.preventDefault(); if(S.started) askNew(true); return; } var k=k0(e);
+  if(k==='f'){ e.preventDefault(); fullscreen(); return; }
+  if(k==='n'){ e.preventDefault(); musicToggle(); return; }
+  if(k==='m'){ e.preventDefault(); muted=!muted; save(); toast(muted?'Sound off':'Sound on'); if(!muted) SND.tick(); return; }
+  if(e.key==='Escape'){ openShop(false); return; }
+  if(k==='s'){ e.preventDefault(); openShop($('mg-shop').hidden); return; }
+  if(/^[1-4]$/.test(e.key)){ answer(+e.key-1); return; }
+  if(/^[abcd]$/.test(k)&&S.ss&&S.ss.state==='pick'){ e.preventDefault(); ssPick('abcd'.indexOf(k)); return; }
+  if(e.key==='Enter'){ if(S.qDone&&!$('mg-next').disabled&&!FAST){ e.preventDefault(); newQ(); } return; }
+  if(e.key===' '){ e.preventDefault(); if(!e.repeat&&S.started&&!S.over) chargeStart('key'); return; }
+  var arr={ArrowRight:[1,0],ArrowLeft:[-1,0],ArrowUp:[0,1],ArrowDown:[0,-1]}[e.key];
+  if(arr){ e.preventDefault(); if(ready()&&!CH.on){ setAim(S.aim[0]+arr[0],S.aim[1]+arr[1]); save(); } } });
+function fit(){ var s=Math.min(innerWidth/1920,innerHeight/1080), y=$('stage').style; y.transform='scale('+s+')'; y.left=((innerWidth-1920*s)/2)+'px'; y.top=((innerHeight-1080*s)/2)+'px'; }
+addEventListener('resize',fit);
+function askNew(o){ $('sz-ask').hidden=!o; }
+function newRun(){ var n=S.name; S=fresh(); S.name=n; try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} location.reload(); }   // S is replaced first, so a save that fires before the reload writes the fresh run
+$('sz-askyes').addEventListener('click',newRun); $('sz-askno').addEventListener('click',function(){ askNew(false); });
+document.querySelector('.mg-top .mg-logo').addEventListener('click',function(){ if(S.started) askNew(true); });
+$('sz-mus').addEventListener('click',function(e){ e.stopPropagation(); ac(); musicToggle(); }); musBtn();
+$('mg-go').addEventListener('click',function(){ if(S.started) jingle(); });
+
+/* ================= BOOT ================= */
+S=load()||fresh(); fit();
+if(!QS){ $('mg-prompt').textContent='questions.js is missing: keep it in the same folder as this game.'; }
+if(S.started){ $('mg-start').hidden=true;
+  if(S.over||S.endAt<=now()){ S.over=true; if(!S.ball){ S.ball=hole(S.hole).tee.slice(); S.cup=S.cup||hole(S.hole).cup; } placeBall(); drawTurf(); showEnd(false); }
+  else { if(!S.ball||!S.cup){ startHole(S.hole); } else { placeBall(); drawTurf(); if(S.ss&&S.ss.state==='roll'){ S.ss.state='pick'; S.ss.pick=-1; S.ss.msg=''; } ssDraw(); }
+    if(S.pending){ setTimeout(nextHole,400); }
+    if(S.q&&!(FAST&&S.qDone)) showQ(); else newQ(); } }
+else { S.ball=hole(0).tee.slice(); S.cup=hole(0).cup.slice(); placeBall(); drawTurf(); $('mg-nameinput').value=S.name||''; $('mg-go').disabled=!S.name; }
+hud(); timerDraw(); setInterval(timerDraw,250); requestAnimationFrame(loop);
+if(document.fonts&&document.fonts.ready) document.fonts.ready.then(function(){ /* canvas text picks up Fredoka once it loads */ });
+
+/* test hooks */
+window.__G={ state:function(){ return S; }, ball:function(){ return B; }, hole:hole, holes:HOLES, simulate:simulate, makeSS:makeSS, ssVel:ssVel, setAim:setAim, putt:putt, ssPick:ssPick, ready:ready,
+  startHole:startHole, chargeStart:chargeStart, chargeEnd:chargeEnd, meter:meter, lastPow:function(){ return lastPow; }, end:function(){ S.endAt=now()-1; timerDraw(); }, next:function(){ return QS.next(); }, set:QS?QS.set:null, fast:FAST, UN:UN, gt:function(){ return gt; }, showQ:showQ };
+window.__verify=function(n){ var bad=[], i; for(i=0;i<n;i++){ var q=QS.next(), ok=q.choices.filter(function(c){ return c.ok; });
+    if(ok.length!==1) bad.push(['not one right',q.prompt]); if(new Set(q.choices.map(function(c){ return c.html; })).size!==4) bad.push(['repeat labels',q.prompt]);
+    q.choices.forEach(function(c){ if(!c.ok&&!c.why) bad.push(['no why',q.prompt]); }); }
+  /* slope shots: re-derive the slope from where the tee and cup are drawn, and roll every choice */
+  var ssBad=[]; [2,5,8,11,14,17].forEach(function(n){ var h=hole(n); for(var j=0;j<120;j++){ var ss=makeSS(h), rise=h.tee[1]-ss.cup[1], run=ss.cup[0]-h.tee[0], right=ss.ch.filter(function(c){ return c.ok; });
+      if(right.length!==1) ssBad.push([n,'not one right']); else if(right[0].n*run!==rise*right[0].d) ssBad.push([n,'wrong slope',rise,run,right[0]]);
+      ss.ch.forEach(function(c){ if(!c.ok&&c.n*run===rise*c.d) ssBad.push([n,'two right']); if(!c.ok&&!c.why) ssBad.push([n,'no why']); });
+      ss.ch.forEach(function(c){ var v=ssVel(ss,c), save=S.cup; S.cup=ss.cup; var b={x:h.tee[0],y:h.tee[1],vx:v[0],vy:v[1],cup:ss.cup,cr:0.42,mag:false}, ev='';
+        for(var k=0;k<4800;k++){ ev=phys(b,h,k*DT,false); if(ev==='stop'||ev==='sink'||ev==='water') break; } S.cup=save;
+        if(c.ok&&ev!=='sink') ssBad.push([n,'right slope misses']); if(!c.ok&&ev==='sink') ssBad.push([n,'wrong slope sinks',c]); }); } });
+  return { questions:n, bad:bad.slice(0,5), badCount:bad.length, slopeShots:ssBad.slice(0,5), slopeBadCount:ssBad.length }; };
+})();
+</script>
+<script>/* the start screen names the question set the hub link picked */
+(function(){ var m=/[?&]set=([a-z]+)/.exec(location.search); if(m&&window.SpitzQ&&SpitzQ.sets&&SpitzQ.sets[m[1]]) document.querySelectorAll('.sz-setname').forEach(function(e){ e.textContent=SpitzQ.sets[m[1]].name+'.'; }); })();
+</script>
+<!-- ================= FULL SCREEN REMINDER: shows until the game is full screen; click it or press F ================= -->
+<style>
+.sz-fs{ position:fixed; left:50%; bottom:16px; transform:translateX(-50%); transform-origin:50% 100%; z-index:9999; display:flex; white-space:nowrap; align-items:center; gap:10px; padding:10px 20px 10px 12px; border-radius:999px;
+  border:2px solid rgba(255,255,255,.4); background:rgba(0,0,0,.78); color:#fff; font:700 18px/1 Inter,system-ui,sans-serif; cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,.4); transition:opacity .4s; }
+.sz-fs kbd{ display:inline-grid; place-items:center; min-width:34px; height:34px; border-radius:8px; background:#fff; color:#111; font:800 20px/1 Inter,system-ui,sans-serif; }
+.sz-fs.quiet{ opacity:.4; } .sz-fs:hover{ opacity:1; }
+.sz-fs[hidden]{ display:none; }
+</style>
+<button class="sz-fs" id="sz-fs" hidden aria-label="Full screen, key F"><kbd>F</kbd>Press F for full screen</button>
+<script>
+(function(){ var b=document.getElementById('sz-fs'), t0=Date.now();
+  function fs(){ return !!(document.fullscreenElement||document.webkitFullscreenElement); }
+  function upd(){ b.hidden=fs(); var st=document.querySelector('[id$="-start"]'), onStart=!!(st&&!st.hidden&&st.offsetParent);
+    b.classList.toggle('quiet', !onStart && Date.now()-t0>8000);
+    /* sit at the same spot of the game screen at any window size: scale with the stage and follow its letterbox (a game can move it sideways with --sz-fs-x).
+       On the start and end screens it waits in the top right corner, so it never covers the keys line or the buttons (a game can opt out with --sz-fs-corner:0) */
+    var sg=document.getElementById('stage'); if(sg){ var r=sg.getBoundingClientRect(), k=r.width/1920; if(k>0){ var cs=getComputedStyle(document.documentElement),
+        x=parseFloat(cs.getPropertyValue('--sz-fs-x'))||0.5, en=document.querySelector('[id$="-end"]'), over=onStart||!!(en&&!en.hidden&&en.offsetParent);
+      if(over&&cs.getPropertyValue('--sz-fs-corner').trim()!=='0'){ b.style.top=(r.top+24*k)+'px'; b.style.bottom='auto'; b.style.left=(r.right-24*k)+'px'; b.style.transformOrigin='100% 0'; b.style.transform='translateX(-100%) scale('+k+')'; }
+      else{ b.style.top=''; b.style.transformOrigin=''; b.style.left=(r.left+r.width*x)+'px'; b.style.bottom=(window.innerHeight-r.bottom+16*k)+'px'; b.style.transform='translateX(-50%) scale('+k+')'; } } } }
+  b.addEventListener('click',function(){ document.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true})); setTimeout(upd,300); });
+  ['click','keydown'].forEach(function(n){ document.addEventListener(n,function(){ setTimeout(upd,60); },true); });   // follow Start / Play again right away
+  window.addEventListener('resize',function(){ setTimeout(upd,50); }); document.addEventListener('fullscreenchange',upd); document.addEventListener('webkitfullscreenchange',upd); setInterval(upd,1000); upd(); })();
+</script>
+
+</body>
+</html>

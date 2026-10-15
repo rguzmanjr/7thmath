@@ -1,0 +1,414 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Chalk Clash · Math 7 Arcade</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Cabin+Sketch:wght@700&family=Lexend:wght@400;600;700;800&display=swap">
+<style>
+/* Chalk Clash: a chalkboard battlefield on a number line, a notebook-paper question card, and a chalk command tray.
+   Prefix cc- (the question bank styles cc-fr, cc-eq, cc-graph). */
+:root{
+  --board:#22423A; --board2:#1A332D; --frame:#6B4A2E; --chalk:#F4F1E8; --chalk2:#C9D4CC;
+  --you:#8FE3FF; --rival:#FF9EC4; --gold:#FFD66B; --paper:#FFFDF7; --rule:#DCE6F5; --margin:#F2A7A7; --ink:#1E2A44; --ink2:#5A6680;
+  --display:'Cabin Sketch','Chalkboard SE','Comic Sans MS',system-ui,sans-serif; --body:'Lexend',system-ui,sans-serif;
+  /* names scorecode.js reads for the score-code box */
+  --panel:#EEF2F7; --text:#1E2A44; --muted:#5A6680; --accent:#1F6F5C;
+  color-scheme:dark;
+}
+*{ box-sizing:border-box; }
+[hidden]{ display:none !important; }
+html,body{ margin:0; height:100%; background:#14261F; color:var(--chalk); font:400 16px/1.45 var(--body); }
+body{ overflow:hidden; }
+#stage{ position:relative; height:100%; display:flex; flex-direction:column; gap:10px; padding:env(safe-area-inset-top,0px) 12px calc(10px + env(safe-area-inset-bottom,0px));
+  background:radial-gradient(110% 80% at 50% 0%, #1F3B33 0%, #13241E 70%); }
+button{ font:inherit; color:inherit; cursor:pointer; }
+button:focus-visible,input:focus-visible{ outline:3px solid var(--gold); outline-offset:2px; }
+
+.cc-top{ display:flex; align-items:center; gap:8px; padding-top:8px; flex-wrap:wrap; }
+.cc-logo{ font:700 34px/1 var(--display); margin:0; color:var(--chalk); letter-spacing:.01em; }
+.cc-credit{ font-size:12px; color:var(--chalk2); display:block; margin-top:2px; }
+.cc-sp{ flex:1; }
+.cc-chip{ background:rgba(0,0,0,.25); border:2px solid rgba(244,241,232,.2); border-radius:12px; padding:4px 11px 5px; min-width:72px; text-align:center; }
+.cc-chip .l{ display:block; font-size:12px; font-weight:700; color:var(--chalk2); }
+.cc-chip .v{ display:block; font:700 24px/1.05 var(--display); }
+.cc-chip.energy{ border-color:var(--gold); min-width:110px; } .cc-chip.energy .v{ color:var(--gold); }
+.cc-chip.pop{ animation:pop .4s; } @keyframes pop{ 40%{ transform:scale(1.15); } }
+.cc-btn{ background:rgba(0,0,0,.25); border:2px solid rgba(244,241,232,.2); border-radius:12px; padding:9px 12px; font-weight:700; font-size:14px; }
+
+/* battlefield in a wooden frame */
+.cc-field{ position:relative; flex:none; height:clamp(220px,40vh,360px); border-radius:14px; border:8px solid var(--frame); box-shadow:inset 0 0 0 2px #3E2A19, 0 8px 20px rgba(0,0,0,.35); overflow:hidden; background:var(--board); }
+#cc-canvas{ display:block; width:100%; height:100%; }
+.cc-banner{ position:absolute; left:50%; top:46%; transform:translate(-50%,-50%); text-align:center; pointer-events:none; color:var(--chalk); text-shadow:0 2px 0 rgba(0,0,0,.35); }
+.cc-banner b{ display:block; font:700 clamp(32px,5vw,54px)/1 var(--display); }
+.cc-banner span{ font-weight:700; color:var(--chalk2); }
+
+.cc-lower{ flex:1; min-height:0; display:grid; grid-template-columns:minmax(0,1.55fr) minmax(300px,1fr); gap:12px; }
+
+/* notebook paper question card */
+.cc-q{ min-height:0; overflow:auto; color:var(--ink); border-radius:14px; padding:12px 16px 14px 46px; display:flex; flex-direction:column; gap:8px;
+  background:linear-gradient(90deg,transparent 33px,var(--margin) 33px,var(--margin) 35px,transparent 35px),repeating-linear-gradient(180deg,var(--paper) 0 31px,var(--rule) 31px 32px);
+  background-color:var(--paper); box-shadow:0 8px 20px rgba(0,0,0,.35); border:3px solid var(--paper); }
+.cc-q.need{ border-color:var(--gold); animation:glow 1s 2; } @keyframes glow{ 50%{ box-shadow:0 0 0 7px rgba(255,214,107,.5); } }
+.cc-qhead{ display:flex; justify-content:space-between; gap:8px; align-items:center; flex-wrap:wrap; }
+.cc-tag{ background:#1F6F5C; color:#fff; border-radius:999px; padding:4px 12px; font-weight:700; font-size:14px; }
+.cc-reward{ font-weight:800; color:#1F6F5C; }
+#cc-q .cc-prompt{ font:700 24px/1.3 var(--body) !important; min-height:0 !important; color:var(--ink); }
+#cc-body{ display:flex; flex-direction:column; gap:10px; }
+.cc-q.vis #cc-body{ flex-direction:row; align-items:flex-start; }
+#cc-visual:empty{ display:none; }
+.cc-graph{ display:block; width:220px; height:220px; flex:none; border-radius:12px; background:#12151D; }
+.cc-choices{ flex:1; min-width:0; display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.cc-q.vis .cc-choices{ grid-template-columns:1fr; }
+.cc-ch{ display:flex; align-items:center; gap:10px; text-align:left; background:#fff; color:var(--ink); border:2px solid #CDD5E3; border-radius:12px; padding:8px 11px; font-size:20px; font-weight:700; min-height:52px; }
+.cc-ch:hover:not(:disabled){ border-color:#1F6F5C; }
+.cc-ch .k{ flex:none; width:28px; height:28px; border-radius:50%; background:var(--ink); color:#fff; display:grid; place-items:center; font-size:14px; font-weight:800; }
+.cc-ch.ok{ background:#DDF4EC; border-color:#1E9E6A; } .cc-ch.ok .k{ background:#1E9E6A; }
+.cc-ch.no{ background:#FBE3E6; border-color:#D64560; } .cc-ch.no .k{ background:#D64560; }
+.cc-ch:disabled{ cursor:default; }
+.cc-fb{ border-radius:10px; padding:8px 11px; background:#EEF2F7; font-size:16px; min-height:46px; }
+.cc-fb.ok{ background:#DDF4EC; } .cc-fb.bad{ background:#FBE3E6; } .cc-fb .h{ display:block; font-weight:800; }
+.cc-next{ align-self:flex-end; background:var(--ink); color:#fff; border:none; border-radius:12px; padding:10px 16px; font-weight:800; }
+.cc-next:disabled{ background:#C3CBD9; cursor:default; }
+.cc-eq{ white-space:nowrap; font-weight:800; }
+.cc-fr{ display:inline-flex; flex-direction:column; vertical-align:middle; text-align:center; font-size:.78em; line-height:1.05; margin:0 .08em; }
+.cc-fr span:first-child{ border-bottom:.08em solid currentColor; padding:0 .12em; }
+.cc-q .c-ans{ color:#6E2BC2; } .cc-q .c-m{ color:#A35C00; } .cc-q .c-b{ color:#C0267A; } .cc-q .c-pt{ color:#8A6D00; } .cc-q .c-x{ color:#0E7E6E; }
+
+/* chalk tray of commands */
+.cc-cmd{ min-height:0; overflow:auto; background:var(--board2); border:2px solid rgba(244,241,232,.15); border-radius:14px; padding:12px; display:flex; flex-direction:column; gap:8px; }
+.cc-cmd h2{ margin:0; font:700 22px/1 var(--display); display:flex; justify-content:space-between; align-items:baseline; }
+.cc-cmd h2 small{ font:700 14px var(--body); color:var(--chalk2); }
+.cc-units{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.cc-u{ background:rgba(255,255,255,.05); border:2px solid rgba(143,227,255,.45); border-radius:12px; padding:8px 6px 7px; display:flex; flex-direction:column; align-items:center; gap:2px; }
+.cc-u svg{ width:46px; height:40px; }
+.cc-u b{ font-size:15px; } .cc-u .cost{ color:var(--gold); font-weight:800; font-size:14px; } .cc-u .hk{ font-size:12px; color:var(--chalk2); }
+.cc-u:disabled,.cc-x:disabled{ opacity:.38; cursor:not-allowed; }
+.cc-u:not(:disabled):hover{ background:rgba(143,227,255,.12); }
+.cc-xs{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.cc-x{ background:rgba(255,255,255,.05); border:2px solid rgba(244,241,232,.25); border-radius:12px; padding:8px 6px; font-size:13px; font-weight:700; line-height:1.25; }
+.cc-x .m{ display:block; height:6px; border-radius:6px; background:rgba(255,255,255,.12); margin-top:5px; overflow:hidden; } .cc-x .m i{ display:block; height:100%; width:0; background:var(--gold); }
+.cc-x.ready{ border-color:var(--gold); background:rgba(255,214,107,.12); }
+.cc-tip{ font-size:13px; color:var(--chalk2); margin:0; }
+.cc-toast{ position:absolute; left:50%; bottom:12px; transform:translateX(-50%); background:rgba(10,20,16,.9); border:2px solid var(--gold); border-radius:12px; padding:8px 14px; font-weight:700; max-width:85%; text-align:center; }
+
+/* overlays */
+.cc-over{ position:absolute; inset:0; z-index:5; display:grid; place-items:center; padding:20px; background:rgba(8,16,12,.75); overflow:auto; }
+.cc-box{ width:min(840px,100%); background:var(--paper); color:var(--ink); border-radius:18px; padding:24px 28px 22px; box-shadow:0 20px 60px rgba(0,0,0,.5); }
+.cc-big{ font:700 clamp(46px,8vw,80px)/.95 var(--display); color:#1F6F5C; margin:0; }
+.cc-sub{ font-size:18px; color:var(--ink2); margin:10px 0 14px; max-width:64ch; }
+.cc-steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-bottom:16px; }
+.cc-step{ background:#EEF2F7; border-radius:12px; padding:10px 12px; font-size:15px; }
+.cc-step b{ display:block; font:700 22px/1.1 var(--display); color:#1F6F5C; margin-bottom:3px; }
+.cc-row{ display:flex; gap:10px; flex-wrap:wrap; }
+.cc-input{ flex:1; min-width:220px; font:700 20px var(--body); padding:12px 15px; border-radius:12px; border:2px solid #C3CBD9; background:#fff; color:var(--ink); }
+.cc-go{ background:#1F6F5C; color:#fff; border:none; border-radius:12px; padding:12px 28px; font:700 28px/1 var(--display); }
+.cc-go:disabled{ background:#C3CBD9; cursor:not-allowed; }
+.cc-help{ margin-top:10px; font-size:13px; color:var(--ink2); }
+.cc-name{ font:700 30px/1.1 var(--display); } .cc-final{ font:700 64px/1 var(--display); color:#1F6F5C; margin:4px 0; }
+.cc-result{ font-weight:800; font-size:18px; margin-bottom:10px; }
+.cc-stats{ display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; margin-bottom:10px; }
+.cc-stat{ background:#EEF2F7; border-radius:10px; padding:7px 10px; } .cc-stat .l{ font-size:13px; color:var(--ink2); font-weight:700; } .cc-stat .v{ font:700 22px/1.15 var(--display); }
+
+@media (max-width:920px){
+  body{ overflow:auto; } #stage{ height:auto; min-height:100%; }
+  .cc-lower{ grid-template-columns:1fr; } .cc-steps{ grid-template-columns:1fr; } .cc-field{ height:clamp(200px,34vh,300px); }
+  .cc-logo{ font-size:26px; } .cc-chip{ min-width:0; padding:3px 8px; } .cc-chip .v{ font-size:19px; }
+  .cc-q.vis #cc-body{ flex-direction:column; } .cc-graph{ width:100%; max-width:280px; height:auto; aspect-ratio:1; } .cc-choices{ grid-template-columns:1fr; }
+}
+@media (prefers-reduced-motion:reduce){ .cc-q.need,.cc-chip.pop{ animation:none; } }
+</style>
+</head>
+<body>
+<div id="stage">
+  <header class="cc-top">
+    <div><h1 class="cc-logo">Chalk Clash</h1><span class="cc-credit">Math 7 Arcade</span></div>
+    <span class="cc-sp"></span>
+    <div class="cc-chip"><span class="l">Time</span><span class="v" id="cc-time">8:00</span></div>
+    <div class="cc-chip"><span class="l">Score</span><span class="v" id="cc-score">0</span></div>
+    <div class="cc-chip energy" id="cc-energychip"><span class="l">Energy</span><span class="v" id="cc-energy">0</span></div>
+    <div class="cc-chip"><span class="l">Round</span><span class="v" id="cc-round">1</span></div>
+    <div class="cc-chip"><span class="l">Streak</span><span class="v" id="cc-streak">0</span></div>
+    <button class="cc-btn" id="cc-mute" aria-pressed="false">Sound on</button>
+  </header>
+
+  <section class="cc-field" aria-label="Battlefield">
+    <canvas id="cc-canvas" aria-label="Chalk Clash battlefield. Your fort is on the left, the rival fort on the right."></canvas>
+    <div class="cc-banner" id="cc-banner" hidden></div>
+    <div class="cc-toast" id="cc-toast" role="status" aria-live="polite" hidden></div>
+  </section>
+
+  <div class="cc-lower">
+    <aside class="cc-q" id="cc-q" aria-label="Question">
+      <div class="cc-qhead"><span class="cc-tag" id="cc-tag">Question</span><span class="cc-reward" id="cc-reward">+30 energy</span></div>
+      <div class="cc-prompt" id="cc-prompt"></div>
+      <div id="cc-body"><div id="cc-visual"></div><div class="cc-choices" id="cc-choices"></div></div>
+      <div class="cc-fb" id="cc-fb">Right answers give energy. Wrong answers give nothing, so read the hint and try the next one.</div>
+      <button class="cc-next" id="cc-next" disabled>Next question (Enter)</button>
+    </aside>
+
+    <section class="cc-cmd" aria-label="Commands">
+      <h2>Send shapes <small id="cc-agename">Flat shapes</small></h2>
+      <div class="cc-units" id="cc-units"></div>
+      <div class="cc-xs">
+        <button class="cc-x" id="cc-tower">Protractor tower<br><span id="cc-towercost">90 energy</span> (T)</button>
+        <button class="cc-x" id="cc-evolve">Evolve to 3D (V)<span class="m"><i id="cc-xpbar"></i></span></button>
+        <button class="cc-x" id="cc-erase">Eraser sweep (X)<span class="m"><i id="cc-erbar"></i></span></button>
+      </div>
+      <p class="cc-tip" id="cc-tip">Triangles are fast. Squares are tough. Circles toss chalk from far away.</p>
+    </section>
+  </div>
+
+  <div class="cc-over" id="cc-start"><div class="cc-box">
+    <h2 class="cc-big">Chalk Clash</h2>
+    <p class="cc-sub"><span class="sz-setname">Rational number operations.</span> Send chalk shapes down the number line and knock down the rival fort before yours falls. You have 8 minutes.</p>
+    <div class="cc-steps">
+      <div class="cc-step"><b>1. Answer</b>Each right answer gives 30 energy, plus a little more on a streak. Wrong answers give nothing, so read the hint.</div>
+      <div class="cc-step"><b>2. Send</b>Spend energy on shapes: Q triangle, W square, E circle. When shapes meet, they bump until one pops into chalk dust.</div>
+      <div class="cc-step"><b>3. Win rounds</b>Knock down the rival fort to win the round. Popping shapes earns points toward evolving to 3D. Streaks charge the eraser sweep.</div>
+    </div>
+    <div class="cc-row"><input class="cc-input" id="cc-nameinput" maxlength="24" placeholder="Your first and last name" autocomplete="off" aria-label="Your name"><button class="cc-go" id="cc-go" disabled>Start</button></div>
+    <div class="cc-help">Keys: 1–4 answer · Enter next question · Q W E send shapes · T tower · V evolve · X eraser · M sound · F full screen</div>
+  </div></div>
+
+  <div class="cc-over" id="cc-end" hidden><div class="cc-box">
+    <p class="cc-sub" style="margin:0">Time! Show this screen to your teacher.</p>
+    <div class="cc-name" id="cc-endname"></div>
+    <div class="cc-final" id="cc-endscore">0</div>
+    <div class="cc-result" id="cc-endres"></div>
+    <div class="cc-stats" id="cc-endstats"></div>
+    <div class="cc-stats" id="cc-endtopics"></div>
+    <button class="cc-go" id="cc-again">Play again</button>
+  </div></div>
+</div>
+
+<script src="scorecode.js"></script>
+<script src="questions.js"></script>
+<script>
+/*CORE-START*/
+/* the battle, with no drawing: also run by the balance tests */
+var CORE=(function(){
+  var LANE=1000, FORT=70;
+  var KINDS=[
+    {key:'tri', names:['Triangle','Pyramid'], cost:25, hp:[34,62], dps:[9,16], spd:72, rng:18, size:28, xp:10, pts:50},
+    {key:'sq',  names:['Square','Cube'],      cost:45, hp:[95,172], dps:[6,11], spd:44, rng:18, size:32, xp:18, pts:90},
+    {key:'ci',  names:['Circle','Sphere'],    cost:60, hp:[38,68], dps:[11,19], spd:52, rng:190, size:28, xp:15, pts:75, ranged:true}
+  ];
+  var TOWER={ cost:90, rng:230, dmg:[4,7], cd:0.8 };
+  function fortHP(team,round){ return team===0? 600 : 500+120*(round-1); }
+  function rivalRate(round,t){ return (round===1?0.95:1.15+0.25*(round-1))*(1+Math.max(0,t-60)/150); }   /* rival energy per second; it speeds up in long rounds */
+  function rivalMult(round){ return 1+0.07*(round-1); }
+  function pickRival(){ var r=Math.random(); return r<0.45?0:r<0.75?1:2; }
+  function battle(round,keep){ return { round:round, t:0, units:[], shots:[], fx:[], events:[], over:null, uid:0,
+    forts:[{hp:fortHP(0,round),max:fortHP(0,round)},{hp:fortHP(1,round),max:fortHP(1,round)}],
+    tower:[!!keep.tower,round>=3], towerCd:[0,0], age:[keep.age||0,round>=6?1:0], budget:25, next:0, queue:[] }; }
+  function spawnX(team,k){ return team===0? FORT+KINDS[k].size/2+2 : LANE-FORT-KINDS[k].size/2-2; }
+  function spawn(B,team,k){ var x=spawnX(team,k), K=KINDS[k];
+    if(B.units.some(function(u){ return u.team===team&&Math.abs(u.x-x)<(u.size+K.size)/2+4; })) return false;
+    var age=B.age[team], m=team===1?rivalMult(B.round):1; if(team===1&&age&&Math.random()<0.55) age=0;   /* from round 6 the rival mixes in 3D shapes */
+    B.units.push({ id:++B.uid, team:team, k:k, age:age, x:x, hp:K.hp[age]*m, max:K.hp[age]*m, dps:K.dps[age]*m, size:K.size, cd:Math.random()*0.3, bob:Math.random()*6, hit:0 });
+    return true; }
+  function front(u){ return u.team===0? u.x+u.size/2 : u.x-u.size/2; }
+  function step(B,dt){ if(B.over) return; B.t+=dt; var U=B.units;
+    /* rival spends its energy */
+    if(B.t>5){ B.budget+=rivalRate(B.round,B.t)*dt; if(B.budget>=KINDS[B.next].cost&&spawn(B,1,B.next)){ B.budget-=KINDS[B.next].cost; B.next=pickRival(); } }
+    if(B.queue.length&&spawn(B,0,B.queue[0])) B.queue.shift();
+    U.forEach(function(u){ var K=KINDS[u.k], dir=u.team===0?1:-1, foe=null, fd=1e9, ally=1e9;
+      U.forEach(function(e){ if(e===u||e.hp<=0) return; var gap=(e.x-u.x)*dir-(e.size+u.size)/2;
+        if(gap<-u.size) return; if(e.team!==u.team){ if(gap<fd){ fd=gap; foe=e; } } else if(e.x*dir>u.x*dir&&gap<ally) ally=gap; });
+      var fortGap=u.team===0? (LANE-FORT)-front(u) : front(u)-FORT;
+      u.cd-=dt; u.hit=Math.max(0,u.hit-dt);
+      var target=null; if(foe&&fd<=K.rng) target=foe; else if(fortGap<=K.rng&&(!foe||fd>fortGap)) target='fort';
+      if(target){ if(K.ranged){ if(u.cd<=0){ u.cd=0.8; B.shots.push({team:u.team,x:front(u),y:0,tx:target==='fort'?(u.team===0?LANE-FORT:FORT):target.x,tid:target==='fort'?0:target.id,dmg:u.dps*0.8,fort:target==='fort'}); } }
+        else { if(target==='fort'){ B.forts[1-u.team].hp-=u.dps*dt; B.events.push({type:'fort',team:1-u.team,dmg:u.dps*dt}); } else { target.hp-=u.dps*dt; target.hit=0.12; } } }
+      else if(ally>4) u.x+=dir*K.spd*dt; });
+    /* towers */
+    [0,1].forEach(function(t){ if(!B.tower[t]) return; B.towerCd[t]-=dt; if(B.towerCd[t]>0) return; var fx=t===0?FORT:LANE-FORT, best=null, bd=1e9;
+      U.forEach(function(e){ if(e.team===t||e.hp<=0) return; var d=Math.abs(e.x-fx); if(d<=TOWER.rng&&d<bd){ bd=d; best=e; } });
+      if(best){ B.towerCd[t]=TOWER.cd; B.shots.push({team:t,x:fx,y:-60,tx:best.x,tid:best.id,dmg:TOWER.dmg[B.age[t]],fort:false,tower:true}); } });
+    /* chalk dots */
+    B.shots=B.shots.filter(function(s){ var tgt=null; if(!s.fort){ for(var i=0;i<U.length;i++) if(U[i].id===s.tid&&U[i].hp>0){ tgt=U[i]; break; } if(!tgt) return false; s.tx=tgt.x; }
+      var d=s.tx-s.x, v=430*dt; s.y+=(0-s.y)*Math.min(1,dt*6);
+      if(Math.abs(d)<=v){ if(s.fort){ B.forts[1-s.team].hp-=s.dmg; B.events.push({type:'fort',team:1-s.team,dmg:s.dmg}); } else { tgt.hp-=s.dmg; tgt.hit=0.12; } return false; }
+      s.x+=Math.sign(d)*v; return true; });
+    /* pops */
+    B.units=U.filter(function(u){ if(u.hp>0) return true; B.events.push({type:'pop',team:u.team,k:u.k,age:u.age,x:u.x}); return false; });
+    if(B.forts[1].hp<=0){ B.forts[1].hp=0; B.over='win'; } else if(B.forts[0].hp<=0){ B.forts[0].hp=0; B.over='lose'; } }
+  function erase(B){ var n=0; B.units=B.units.filter(function(u){ if(u.team===1){ B.events.push({type:'pop',team:1,k:u.k,age:u.age,x:u.x,erased:true}); n++; return false; } return true; }); B.shots=B.shots.filter(function(s){ return s.team===0; }); return n; }
+  return { LANE:LANE, FORT:FORT, KINDS:KINDS, TOWER:TOWER, battle:battle, spawn:spawn, step:step, erase:erase, rivalRate:rivalRate };
+})();
+/*CORE-END*/
+
+(function(){
+'use strict';
+var $=function(id){ return document.getElementById(id); };
+var KEY='chalk_clash_v1', RUN_MIN=8, GAIN=30, XP_EVOLVE=320, ERASE_NEED=6, K=CORE.KINDS;
+
+var QS=window.SpitzQ?(window.SpitzQ.forGame('cc')||defaultSet()):null; if(QS&&QS.custom) KEY+=QS.suffix;
+function defaultSet(){ var set=SpitzQ.sets.rat, Q=set.make('cc'), tb=[];
+  return { set:'rat', name:set.name, custom:false, suffix:'', topicTable:function(){ var o={}; set.topics.forEach(function(t){ o[t[1]]=[0,0]; }); return o; },
+    next:function(){ if(!tb.length) tb=set.topics.slice().sort(function(){ return Math.random()-0.5; }); var t=tb.pop(), q=Q.build(t[2][0]); q.topic=t[1]; return q; } }; }
+if(QS) document.querySelectorAll('.sz-setname').forEach(function(e){ e.textContent=QS.name+'.'; });
+
+/* ---------- run state ---------- */
+var S, B, Q=null, qDone=false, nextT=null, lockT=null, toastT=null, pauseUntil=0, eraser=null, floaters=[], dust=[];
+function fresh(){ return { name:'', started:false, over:false, score:0, energy:30, round:1, age:0, tower:false, xp:0, erase:0, wins:0, losses:0, pops:0, sent:0,
+  correct:0, answered:0, streak:0, best:0, topics:QS?QS.topicTable():{}, remain:RUN_MIN*60000, len:RUN_MIN, endAt:0 }; }
+S=fresh(); B=CORE.battle(1,{});
+function save(){ try{ if(S.started&&!S.over) S.remain=Math.max(0,S.endAt-Date.now()); localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} }
+function restore(){ try{ var v=JSON.parse(localStorage.getItem(KEY)||'null'); if(!v||!v.started) return false; S=v; B=CORE.battle(S.round,{tower:S.tower,age:S.age}); return true; }catch(e){ return false; } }
+
+/* ---------- sound ---------- */
+var AC=null, muted=false; try{ muted=localStorage.getItem('chalk_clash_v1_mute')==='1'; }catch(e){}
+function ac(){ if(!AC){ var C=window.AudioContext||window.webkitAudioContext; if(!C) return null; AC=new C(); } if(AC.state==='suspended') AC.resume(); return AC; }
+function tone(f,dur,type,vol,when,slide){ if(muted) return; var a=ac(); if(!a) return; var t=a.currentTime+(when||0), o=a.createOscillator(), g=a.createGain();
+  o.type=type||'sine'; o.frequency.setValueAtTime(f,t); if(slide) o.frequency.exponentialRampToValueAtTime(slide,t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.12,t+0.01); g.gain.exponentialRampToValueAtTime(0.0001,t+dur); o.connect(g); g.connect(a.destination); o.start(t); o.stop(t+dur+0.02); }
+var lastPop=0;
+var SND={ good:function(){ tone(660,0.12,'triangle',0.12); tone(990,0.16,'triangle',0.12,0.08); }, bad:function(){ tone(210,0.22,'square',0.05,0,150); },
+  send:function(){ tone(420,0.08,'triangle',0.1,0,620); }, pop:function(){ var n=performance.now(); if(n-lastPop<70) return; lastPop=n; tone(900+Math.random()*300,0.06,'sine',0.06,0,300); },
+  nope:function(){ tone(120,0.12,'square',0.05); }, win:function(){ [523,659,784,1047].forEach(function(f,i){ tone(f,0.22,'triangle',0.12,i*0.1); }); },
+  lose:function(){ [392,330,262].forEach(function(f,i){ tone(f,0.25,'triangle',0.1,i*0.12); }); }, erase:function(){ tone(160,0.9,'sawtooth',0.05,0,90); },
+  evolve:function(){ [392,523,659,784,1047].forEach(function(f,i){ tone(f,0.16,'triangle',0.11,i*0.06); }); } };
+function setMute(m){ muted=m; try{ localStorage.setItem('chalk_clash_v1_mute',m?'1':'0'); }catch(e){} $('cc-mute').textContent=m?'Sound off':'Sound on'; $('cc-mute').setAttribute('aria-pressed',m?'true':'false'); }
+
+/* ---------- command buttons ---------- */
+function icon(k,age){ var c='#8FE3FF', s='';
+  if(k===0) s=age?'<path d="M10 34 L23 6 L36 34 Z M23 6 L28 30 L36 34 M28 30 L10 34" fill="rgba(143,227,255,.25)" stroke="'+c+'" stroke-width="2.5" stroke-linejoin="round"/>':'<path d="M10 34 L36 20 L10 6 Z" fill="rgba(143,227,255,.25)" stroke="'+c+'" stroke-width="2.5" stroke-linejoin="round"/>';
+  if(k===1) s=age?'<path d="M10 14 h20 v20 h-20 Z M10 14 l7-7 h20 l-7 7 M30 34 l7-7 v-20" fill="rgba(143,227,255,.25)" stroke="'+c+'" stroke-width="2.5" stroke-linejoin="round"/>':'<rect x="11" y="8" width="24" height="24" fill="rgba(143,227,255,.25)" stroke="'+c+'" stroke-width="2.5"/>';
+  if(k===2) s='<circle cx="23" cy="20" r="13" fill="rgba(143,227,255,.25)" stroke="'+c+'" stroke-width="2.5"/>'+(age?'<ellipse cx="23" cy="20" rx="13" ry="4.5" fill="none" stroke="'+c+'" stroke-width="1.6"/>':'');
+  return '<svg viewBox="0 0 46 40" aria-hidden="true">'+s+'</svg>'; }
+function buildUnits(){ $('cc-units').innerHTML=K.map(function(u,i){ return '<button class="cc-u" data-k="'+i+'" aria-label="Send a '+u.names[S.age]+' for '+u.cost+' energy">'+icon(i,S.age)+'<b>'+u.names[S.age]+'</b><span class="cost">'+u.cost+' energy</span><span class="hk">key '+'QWE'[i]+'</span></button>'; }).join('');
+  $('cc-agename').textContent=S.age?'3D solids':'Flat shapes'; }
+function cmdState(){ document.querySelectorAll('.cc-u').forEach(function(b){ b.disabled=S.energy<K[+b.dataset.k].cost||!S.started||S.over; });
+  $('cc-tower').disabled=S.tower||S.energy<CORE.TOWER.cost||!S.started||S.over; $('cc-towercost').textContent=S.tower?'built':'90 energy';
+  $('cc-evolve').disabled=S.age>0||S.xp<XP_EVOLVE||!S.started||S.over; $('cc-evolve').classList.toggle('ready',S.age===0&&S.xp>=XP_EVOLVE); $('cc-xpbar').style.width=(S.age?100:Math.min(100,100*S.xp/XP_EVOLVE))+'%';
+  $('cc-erase').disabled=S.erase<ERASE_NEED||!S.started||S.over; $('cc-erase').classList.toggle('ready',S.erase>=ERASE_NEED); $('cc-erbar').style.width=Math.min(100,100*S.erase/ERASE_NEED)+'%'; }
+function hud(){ $('cc-score').textContent=S.score.toLocaleString(); $('cc-energy').textContent=Math.floor(S.energy); $('cc-round').textContent=S.round; $('cc-streak').textContent=S.streak;
+  var r=S.started&&!S.over?Math.max(0,S.endAt-Date.now()):S.remain, s=Math.ceil(r/1000); $('cc-time').textContent=Math.floor(s/60)+':'+('0'+s%60).slice(-2); cmdState(); }
+function toast(t,ms){ var el=$('cc-toast'); el.textContent=t; el.hidden=false; clearTimeout(toastT); toastT=setTimeout(function(){ el.hidden=true; },ms||2000); }
+function banner(h,sub,ms){ var el=$('cc-banner'); el.innerHTML='<b>'+h+'</b><span>'+sub+'</span>'; el.hidden=false; setTimeout(function(){ el.hidden=true; },ms||2200); }
+function needEnergy(){ SND.nope(); var q=$('cc-q'); q.classList.remove('need'); void q.offsetWidth; q.classList.add('need'); toast('Not enough energy. Answer a question to get more.'); }
+
+function send(k){ if(!S.started||S.over) return; if(S.energy<K[k].cost){ needEnergy(); return; } if(B.queue.length>=4){ toast('Wait for the gate to clear.'); return; }
+  S.energy-=K[k].cost; S.sent++; B.queue.push(k); SND.send(); hud(); save(); }
+function buyTower(){ if(!S.started||S.over||S.tower) return; if(S.energy<CORE.TOWER.cost){ needEnergy(); return; } S.energy-=CORE.TOWER.cost; S.tower=true; B.tower[0]=true; SND.evolve(); toast('Protractor tower built. It tosses chalk at shapes near your fort.'); hud(); save(); }
+function evolve(){ if(!S.started||S.over||S.age>0) return; if(S.xp<XP_EVOLVE){ toast('Pop more rival shapes and answer more questions to evolve.'); return; } S.age=1; B.age[0]=1; SND.evolve(); buildUnits();
+  banner('Evolved to 3D!','New shapes are stronger: pyramids, cubes and spheres.',2400); hud(); save(); }
+function sweep(){ if(!S.started||S.over||S.erase<ERASE_NEED) return; S.erase=0; SND.erase(); eraser={t0:performance.now(),dur:1100,done:false}; hud(); save(); }
+
+/* ---------- questions ---------- */
+function gainFor(){ return GAIN+Math.min(15,5*Math.max(0,S.streak-1)); }
+function showQ(){ if(!QS) return; clearTimeout(nextT); clearTimeout(lockT); Q=QS.next(); qDone=false;
+  $('cc-tag').textContent=Q.topic; $('cc-reward').textContent='+'+(GAIN+Math.min(15,5*S.streak))+' energy';
+  $('cc-prompt').innerHTML=Q.prompt; $('cc-visual').innerHTML=Q.visual||''; $('cc-q').classList.toggle('vis',!!Q.visual);
+  $('cc-choices').innerHTML=Q.choices.map(function(c,i){ return '<button class="cc-ch" data-i="'+i+'"><span class="k">'+(i+1)+'</span><span>'+c.html+'</span></button>'; }).join('');
+  $('cc-fb').className='cc-fb'; $('cc-fb').textContent='Pick an answer: click it or press 1–4.'; $('cc-next').disabled=true; }
+function answer(i){ if(!Q||qDone||!S.started||S.over) return; var c=Q.choices[i]; if(!c) return; qDone=true; ac();
+  var btns=$('cc-choices').querySelectorAll('.cc-ch'); btns.forEach(function(b,j){ b.disabled=true; if(Q.choices[j].ok) b.classList.add('ok'); }); if(!c.ok) btns[i].classList.add('no');
+  S.answered++; var tp=S.topics[Q.topic]||(S.topics[Q.topic]=[0,0]); tp[1]++; var fb=$('cc-fb');
+  if(c.ok){ S.correct++; tp[0]++; S.streak++; S.best=Math.max(S.best,S.streak); var g=gainFor(); S.energy+=g; S.score+=100+10*Math.min(S.streak,5); S.xp+=10; S.erase=Math.min(ERASE_NEED,S.erase+1);
+    SND.good(); var ch=$('cc-energychip'); ch.classList.remove('pop'); void ch.offsetWidth; ch.classList.add('pop');
+    fb.className='cc-fb ok'; fb.innerHTML='<span class="h">Right! +'+g+' energy.'+(S.streak>2?' Streak '+S.streak+'.':'')+(S.erase===ERASE_NEED?' Eraser ready (X).':'')+'</span>'+Q.explain;
+    $('cc-next').disabled=false; nextT=setTimeout(showQ,1300); }
+  else { S.streak=0; S.erase=Math.max(0,S.erase-2); SND.bad(); fb.className='cc-fb bad'; fb.innerHTML='<span class="h">Not quite. No energy this time.</span>'+c.why+'<br>'+Q.explain;
+    lockT=setTimeout(function(){ $('cc-next').disabled=false; },1200); nextT=setTimeout(showQ,5000); }
+  hud(); save(); }
+
+/* ---------- battle events and rounds ---------- */
+function handleEvents(){ B.events.forEach(function(e){
+    if(e.type==='pop'){ burst(e.x,e.team); SND.pop(); if(e.team===1){ var pts=K[e.k].pts*(e.age?2:1); S.score+=pts; S.xp+=K[e.k].xp; S.pops++; floaters.push({x:e.x,y:0,t:performance.now(),txt:'+'+pts}); } }
+    else if(e.type==='fort'&&e.team===1){ S.fortDmg=(S.fortDmg||0)+e.dmg; while(S.fortDmg>=1){ S.score+=2; S.fortDmg-=1; } } });
+  B.events=[]; }
+function roundOver(){ var won=B.over==='win';
+  if(won){ S.wins++; S.score+=2000; SND.win(); banner('Round '+S.round+' won!','+2,000 points. The next rival is tougher.',2600); S.round++; }
+  else { S.losses++; SND.lose(); banner('Your fort fell','Round '+S.round+' starts over. You keep your energy and upgrades.',2600); }
+  pauseUntil=performance.now()+2700; setTimeout(function(){ if(S.over) return; B=CORE.battle(S.round,{tower:S.tower,age:S.age}); hud(); save(); },2650); hud(); save(); }
+
+/* ---------- run ---------- */
+function startRun(){ var n=$('cc-nameinput').value.trim(); if(!n) return; ac(); S=fresh(); S.name=n; S.started=true; S.endAt=Date.now()+S.remain; B=CORE.battle(1,{}); $('cc-start').hidden=true;
+  buildUnits(); showQ(); hud(); save(); }
+function endRun(){ if(S.over) return; S.over=true; S.remain=0; clearTimeout(nextT); clearTimeout(lockT); hud(); save(); showEnd(); }
+function showEnd(){ if(window.SpitzCode) setTimeout(function(){ window.SpitzCode.show('cc','chalk_clash',S); },0);
+  $('cc-endname').textContent=S.name; $('cc-endscore').textContent=S.score.toLocaleString();
+  $('cc-endres').textContent='Won '+S.wins+' round'+(S.wins===1?'':'s')+' and popped '+S.pops+' rival shape'+(S.pops===1?'':'s')+'.';
+  function st(l,v){ return '<div class="cc-stat"><div class="l">'+l+'</div><div class="v">'+v+'</div></div>'; }
+  $('cc-endstats').innerHTML=st('Right answers',S.correct+' of '+S.answered)+st('Best streak',S.best)+st('Shapes sent',S.sent)+st('Forts lost',S.losses);
+  $('cc-endtopics').innerHTML=Object.keys(S.topics).map(function(k){ var t=S.topics[k]; return st(k,t[0]+' of '+t[1]); }).join('');
+  $('cc-end').hidden=false; }
+
+/* ---------- drawing ---------- */
+var cv=$('cc-canvas'), ctx=cv.getContext('2d'), W=0, H=0, DPR=1, SC=1, GY=0, BG=null;
+function fit(){ var r=cv.getBoundingClientRect(); W=r.width; H=r.height; DPR=Math.min(2,window.devicePixelRatio||1); cv.width=Math.max(1,W*DPR); cv.height=Math.max(1,H*DPR);
+  SC=W/CORE.LANE; GY=H*0.8; BG=document.createElement('canvas'); BG.width=cv.width; BG.height=cv.height; var g=BG.getContext('2d'); g.scale(DPR,DPR);
+  var gr=g.createLinearGradient(0,0,0,H); gr.addColorStop(0,'#26493F'); gr.addColorStop(1,'#1D3A32'); g.fillStyle=gr; g.fillRect(0,0,W,H);
+  for(var i=0;i<26;i++){ g.fillStyle='rgba(255,255,255,'+(0.012+Math.random()*0.025).toFixed(3)+')'; g.beginPath(); g.ellipse(Math.random()*W,Math.random()*H,40+Math.random()*120,10+Math.random()*30,Math.random()*3,0,Math.PI*2); g.fill(); }
+  /* the number line */
+  g.strokeStyle='rgba(244,241,232,.75)'; g.lineWidth=3; g.lineCap='round'; g.beginPath(); g.moveTo(X(CORE.FORT)-6,GY); g.lineTo(X(CORE.LANE-CORE.FORT)+6,GY); g.stroke();
+  g.font='700 '+Math.max(12,Math.min(18,W/60))+'px Lexend,sans-serif'; g.textAlign='center'; g.fillStyle='rgba(244,241,232,.6)';
+  for(i=0;i<=10;i++){ var x=X(CORE.FORT+i*(CORE.LANE-2*CORE.FORT)/10); g.beginPath(); g.moveTo(x,GY-7); g.lineTo(x,GY+7); g.stroke(); g.fillText(''+i,x,GY+26); } }
+function X(x){ return x*SC; }
+function chalk(col,w){ ctx.strokeStyle=col; ctx.lineWidth=w||3; ctx.lineJoin='round'; ctx.lineCap='round'; }
+function fort(team,f,now){ var w=CORE.FORT*SC*0.92, h=Math.min(H*0.5,170), x=team===0?X(4):X(CORE.LANE-4)-w, y=GY-h, col=team===0?'#8FE3FF':'#FF9EC4', dmg=1-f.hp/f.max;
+  ctx.fillStyle='rgba(255,255,255,.05)'; ctx.fillRect(x,y,w,h); chalk('rgba(244,241,232,.85)',3); ctx.strokeRect(x,y,w,h);
+  var cw=w/5; ctx.beginPath(); for(var i=0;i<5;i+=2){ ctx.rect(x+i*cw,y-cw*0.8,cw,cw*0.8); } ctx.stroke();
+  for(var r=1;r<5;r++){ ctx.beginPath(); ctx.moveTo(x,y+r*h/5); ctx.lineTo(x+w,y+r*h/5); ctx.globalAlpha=.25; ctx.stroke(); ctx.globalAlpha=1; }
+  ctx.beginPath(); ctx.arc(x+w/2,GY,w*0.22,Math.PI,0); ctx.lineTo(x+w/2+w*0.22,GY); ctx.stroke();
+  var px=x+w/2, py=y-cw*0.8; chalk('rgba(244,241,232,.85)',2); ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(px,py-34); ctx.stroke();
+  ctx.fillStyle=col; ctx.beginPath(); ctx.moveTo(px,py-34); ctx.lineTo(px+(team===0?22:-22),py-27); ctx.lineTo(px,py-20); ctx.closePath(); ctx.fill();
+  /* cracks grow with damage */
+  chalk('rgba(15,30,25,.85)',2.5); var n=Math.floor(dmg*7); for(i=0;i<n;i++){ var cx=x+w*(0.2+0.6*((i*37)%10)/10), cy=y+h*(0.15+0.7*((i*53)%10)/10); ctx.beginPath(); ctx.moveTo(cx,cy); ctx.lineTo(cx+8,cy+10); ctx.lineTo(cx+3,cy+18); ctx.lineTo(cx+11,cy+28); ctx.stroke(); }
+  if(B.tower[team]){ var tx=team===0?x+w*0.75:x+w*0.25, ty=y-cw*0.8-2; chalk(col,2.5); ctx.beginPath(); ctx.arc(tx,ty,16,Math.PI,0); ctx.closePath(); ctx.stroke(); for(i=1;i<6;i++){ var a=Math.PI+i*Math.PI/6; ctx.beginPath(); ctx.moveTo(tx+12*Math.cos(a),ty+12*Math.sin(a)); ctx.lineTo(tx+16*Math.cos(a),ty+16*Math.sin(a)); ctx.stroke(); } }
+  /* strength bar */
+  var bw=Math.min(200,W*0.22), bx=team===0?12:W-12-bw, by=14; ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(bx,by,bw,10); ctx.fillStyle=col; ctx.fillRect(bx,by,bw*Math.max(0,f.hp/f.max),10);
+  ctx.fillStyle='rgba(244,241,232,.9)'; ctx.font='700 13px Lexend,sans-serif'; ctx.textAlign=team===0?'left':'right'; ctx.fillText((team===0?'Your fort ':'Rival fort ')+Math.ceil(Math.max(0,f.hp))+' / '+f.max,team===0?bx:bx+bw,by+26); }
+function unit(u,now){ var s=u.size*SC*0.94, x=X(u.x), walk=u.team===0?1:-1, y=GY-s/2-4-Math.abs(Math.sin(now/140+u.bob))*3, col=u.team===0?'143,227,255':'255,158,196';
+  ctx.save(); ctx.translate(x,y); if(u.hit>0) ctx.translate((Math.random()-.5)*3,0);
+  ctx.fillStyle='rgba('+col+','+(u.hit>0?0.5:0.22)+')'; chalk('rgba('+col+',.95)',2.6); var h=s/2;
+  if(u.k===0){ ctx.beginPath(); if(u.age){ ctx.moveTo(-h,h); ctx.lineTo(0,-h); ctx.lineTo(h,h); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(0,-h); ctx.lineTo(h*0.3*walk,h*0.7); ctx.lineTo(-h,h); ctx.moveTo(h*0.3*walk,h*0.7); ctx.lineTo(h,h); ctx.stroke(); }
+    else { ctx.moveTo(-h*walk,-h); ctx.lineTo(h*walk,0); ctx.lineTo(-h*walk,h); ctx.closePath(); ctx.fill(); ctx.stroke(); } }
+  else if(u.k===1){ if(u.age){ var o=h*0.45; ctx.fillRect(-h,-h+o,2*h-o,2*h-o); ctx.strokeRect(-h,-h+o,2*h-o,2*h-o); ctx.beginPath(); ctx.moveTo(-h,-h+o); ctx.lineTo(-h+o,-h); ctx.lineTo(h,-h); ctx.lineTo(h,h-o); ctx.lineTo(h-o,h); ctx.moveTo(h-o,-h+o); ctx.lineTo(h,-h); ctx.stroke(); }
+    else { ctx.fillRect(-h,-h,2*h,2*h); ctx.strokeRect(-h,-h,2*h,2*h); } }
+  else { ctx.beginPath(); ctx.arc(0,0,h,0,Math.PI*2); ctx.fill(); ctx.stroke(); if(u.age){ ctx.beginPath(); ctx.ellipse(0,0,h,h*0.32,0,0,Math.PI*2); ctx.stroke(); ctx.beginPath(); ctx.arc(-h*0.35,-h*0.35,h*0.22,Math.PI*1.1,Math.PI*1.7); ctx.stroke(); } }
+  ctx.restore();
+  var bw=s*0.9; ctx.fillStyle='rgba(0,0,0,.35)'; ctx.fillRect(x-bw/2,y-h-12,bw,4); ctx.fillStyle='rgba('+col+',.95)'; ctx.fillRect(x-bw/2,y-h-12,bw*Math.max(0,u.hp/u.max),4); }
+function burst(x,team){ var col=team===0?'143,227,255':'255,158,196'; for(var i=0;i<14;i++) dust.push({x:X(x),y:GY-18,vx:(Math.random()-.5)*160,vy:-60-Math.random()*120,t:performance.now(),col:col,s:2+Math.random()*3}); }
+var lastT=performance.now(), lastHud=0;
+function frame(now){ var dt=Math.min(0.05,(now-lastT)/1000); lastT=now;
+  if(S.started&&!S.over){ if(now>=pauseUntil&&!B.over){ CORE.step(B,dt); handleEvents(); if(B.over) roundOver(); }
+    if(eraser&&!eraser.done){ var p=(now-eraser.t0)/eraser.dur; if(p>=0.5&&!eraser.hit){ eraser.hit=true; var n=CORE.erase(B); handleEvents(); toast(n?'Swept '+n+' rival shape'+(n===1?'':'s')+' off the board!':'The board was already clear.'); } if(p>=1) eraser.done=true; }
+    if(Date.now()>=S.endAt) endRun(); if(now-lastHud>200){ hud(); lastHud=now; } }
+  if(!W) fit(); ctx.setTransform(DPR,0,0,DPR,0,0); if(BG) ctx.drawImage(BG,0,0,W,H);
+  fort(0,B.forts[0],now); fort(1,B.forts[1],now);
+  B.units.forEach(function(u){ unit(u,now); });
+  ctx.fillStyle='rgba(244,241,232,.95)'; B.shots.forEach(function(s){ ctx.beginPath(); ctx.arc(X(s.x),GY-24+s.y,3.5,0,Math.PI*2); ctx.fill(); });
+  dust=dust.filter(function(d){ var a=(now-d.t)/700; if(a>=1) return false; var t=(now-d.t)/1000; ctx.fillStyle='rgba('+d.col+','+(1-a).toFixed(2)+')'; ctx.fillRect(d.x+d.vx*t,d.y+d.vy*t+260*t*t,d.s,d.s); return true; });
+  floaters=floaters.filter(function(f){ var a=(now-f.t)/900; if(a>=1) return false; ctx.fillStyle='rgba(255,214,107,'+(1-a).toFixed(2)+')'; ctx.font='700 16px Lexend,sans-serif'; ctx.textAlign='center'; ctx.fillText(f.txt,X(f.x),GY-60-a*30); return true; });
+  if(eraser&&!eraser.done){ var p2=(now-eraser.t0)/eraser.dur, ex=-120+p2*(W+240), eh=H*0.42; ctx.fillStyle='rgba(244,241,232,.06)'; ctx.fillRect(0,GY-eh,Math.max(0,ex),eh);
+    ctx.fillStyle='#8A6A45'; ctx.fillRect(ex-70,GY-eh-12,140,22); ctx.fillStyle='#3C4048'; ctx.fillRect(ex-70,GY-eh+10,140,eh-18); ctx.fillStyle='rgba(255,255,255,.12)'; for(var i=0;i<4;i++) ctx.fillRect(ex-62+i*34,GY-eh+16,22,eh-30); }
+  ctx.fillStyle='rgba(244,241,232,.85)'; ctx.font='700 '+Math.max(16,Math.min(26,W/40))+'px "Cabin Sketch",Lexend,sans-serif'; ctx.textAlign='center'; ctx.fillText('Round '+S.round,W/2,28);
+  requestAnimationFrame(frame); }
+
+/* ---------- input ---------- */
+document.addEventListener('keydown',function(e){ if(e.target&&e.target.tagName==='INPUT'){ if(e.key==='Enter') startRun(); return; }
+  var k=e.key.toLowerCase();
+  if(/^[1-4]$/.test(k)){ answer(+k-1); return; } if(k==='enter'&&!$('cc-next').disabled){ showQ(); return; }
+  if(k==='q') send(0); else if(k==='w') send(1); else if(k==='e') send(2); else if(k==='t') buyTower(); else if(k==='v') evolve(); else if(k==='x') sweep();
+  else if(k==='m') setMute(!muted); else if(k==='f'){ try{ document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen(); }catch(err){} } });
+$('cc-choices').addEventListener('click',function(e){ var b=e.target.closest('.cc-ch'); if(b) answer(+b.dataset.i); });
+$('cc-units').addEventListener('click',function(e){ var b=e.target.closest('.cc-u'); if(b) send(+b.dataset.k); });
+$('cc-next').addEventListener('click',showQ); $('cc-tower').addEventListener('click',buyTower); $('cc-evolve').addEventListener('click',evolve); $('cc-erase').addEventListener('click',sweep);
+$('cc-mute').addEventListener('click',function(){ setMute(!muted); });
+$('cc-nameinput').addEventListener('input',function(){ $('cc-go').disabled=!this.value.trim(); }); $('cc-go').addEventListener('click',startRun);
+$('cc-again').addEventListener('click',function(){ try{ localStorage.removeItem(KEY); }catch(e){} $('cc-end').hidden=true; S=fresh(); B=CORE.battle(1,{}); buildUnits(); hud(); $('cc-start').hidden=false; $('cc-nameinput').focus(); });
+window.addEventListener('resize',fit); window.addEventListener('pagehide',save);
+
+setMute(muted); buildUnits();
+if(restore()){ $('cc-start').hidden=true; buildUnits(); if(S.over) showEnd(); else { S.endAt=Date.now()+S.remain; showQ(); } }
+hud(); requestAnimationFrame(frame);
+window.__cc={ S:function(){ return S; }, B:function(){ return B; }, Q:function(){ return Q; }, send:send, answer:answer, sweep:sweep, evolve:evolve, tower:buyTower };
+})();
+</script>
+</body>
+</html>

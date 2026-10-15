@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Math 7 Leaderboard</title>
+<link rel="icon" href="trophy.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Lexend:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: trophy hall. Game tiles (hub art) along the top; picking one opens its top 10 below in that game's colors.
+   Scores come from data/leaderboard.json, which the teacher page (teacher.html) posts after checking names. */
+:root{
+  --paper:#0E1016; --panel:#191C25; --panel2:#222634; --line:#2E3344;
+  --ink:#F3F5FA; --muted:#9AA3B8; --brand:#FFB020;
+  --gold:#FFD23F; --silver:#C9D1E0; --bronze:#E89A5B;
+  --display:'Bungee','Arial Black',system-ui,sans-serif;
+  --body:'Lexend',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  color-scheme:dark;
+}
+*{ box-sizing:border-box; }
+[hidden]{ display:none !important; }
+html,body{ background:var(--paper); color:var(--ink); margin:0; }
+body{ font:400 16px/1.5 var(--body); padding-inline:16px; padding-block:0 64px; }
+.wrap{ max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:28px; }
+header{ display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:12px; padding-top:32px; }
+.tag{ font:600 14px/1 var(--body); color:var(--muted); letter-spacing:.14em; text-transform:uppercase; }
+h1{ font:400 clamp(34px,6vw,58px)/1 var(--display); margin:6px 0 0; }
+h1 span{ color:var(--brand); }
+.back{ display:inline-flex; align-items:center; gap:8px; font:400 18px/1 var(--display); color:var(--paper); background:var(--brand); padding:12px 18px; border-radius:14px; text-decoration:none; }
+.back:focus-visible{ outline:3px solid var(--ink); outline-offset:3px; }
+.upd{ color:var(--muted); font-size:14px; margin:-14px 0 0; }
+.games{ display:grid; grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); gap:12px; }
+.game{ all:unset; cursor:pointer; background:var(--gp,var(--panel)); border:3px solid color-mix(in srgb,var(--acc) 22%,var(--line)); border-radius:18px; padding:8px 8px 12px; display:flex; flex-direction:column; gap:6px; transition:transform .12s, border-color .12s; min-width:0; }
+.game:hover{ transform:translateY(-2px); border-color:color-mix(in srgb,var(--acc) 60%,var(--line)); }
+.game:focus-visible{ outline:3px solid var(--ink); outline-offset:2px; }
+.game[aria-pressed="true"]{ border-color:var(--acc); box-shadow:0 0 0 4px color-mix(in srgb,var(--acc) 35%,transparent), 0 10px 30px color-mix(in srgb,var(--acc) 25%,transparent); }
+.art{ display:block; width:100%; height:auto; aspect-ratio:200/110; border-radius:12px; overflow:hidden; background:var(--gpanel,var(--panel2)); }
+.noart{ display:grid; place-items:center; font:400 34px/1 var(--display); color:var(--acc); }
+.game b{ font:400 17px/1.1 var(--display); color:var(--acc); padding-inline:4px; }
+.game small{ color:var(--muted); font-size:13px; line-height:1.35; padding-inline:4px; overflow-wrap:anywhere; }
+.game small i{ font-style:normal; color:var(--ink); font-weight:600; }
+.panel{ background:var(--gp,var(--panel)); border:3px solid var(--acc,var(--line)); border-radius:22px; padding:clamp(16px,3vw,28px); display:flex; flex-direction:column; gap:16px; scroll-margin-top:16px; }
+.panel .top{ display:flex; flex-wrap:wrap; gap:16px; align-items:center; }
+.panel .top svg{ width:150px; height:auto; aspect-ratio:200/110; border-radius:12px; flex:none; }
+.panel h2{ font:400 clamp(26px,4.4vw,44px)/1 var(--display); margin:0; color:var(--acc); }
+.panel h2 span{ color:var(--ink); }
+.panel .sub{ color:var(--muted); font-size:15px; margin-top:6px; }
+.board{ display:flex; flex-direction:column; gap:8px; }
+.lb{ display:grid; grid-template-columns:52px minmax(0,1fr) auto auto; gap:14px; align-items:center; background:color-mix(in srgb,var(--gpanel,var(--panel2)) 85%,#fff 4%); border-radius:14px; padding:12px 16px; border:2px solid transparent; }
+.lb .rk{ font:400 26px/1 var(--display); color:var(--muted); text-align:center; }
+.lb .nm{ font-weight:800; font-size:19px; min-width:0; overflow-wrap:anywhere; }
+.lb .meta{ display:block; font-weight:400; font-size:13px; color:var(--muted); }
+.lb .sc{ font:400 28px/1 var(--display); font-variant-numeric:tabular-nums; text-align:right; }
+.lb .ac{ font:700 15px/1 var(--mono); color:var(--muted); min-width:52px; text-align:right; }
+.lb.g1{ border-color:var(--gold); } .lb.g1 .rk{ color:var(--gold); }
+.lb.g2{ border-color:var(--silver); } .lb.g2 .rk{ color:var(--silver); }
+.lb.g3{ border-color:var(--bronze); } .lb.g3 .rk{ color:var(--bronze); }
+.lb.g1 .sc{ color:var(--acc); }
+@media (max-width:560px){ .lb{ grid-template-columns:36px minmax(0,1fr) auto; gap:10px; padding:10px 12px; } .lb .ac{ display:none; } .lb .sc{ font-size:21px; } .lb .nm{ font-size:17px; } .panel .top svg{ width:110px; } }
+.empty{ color:var(--muted); padding:22px; text-align:center; border:2px dashed var(--line); border-radius:14px; }
+.how{ color:var(--muted); font-size:14px; text-align:center; }
+@media (prefers-reduced-motion:no-preference){ .lb{ animation:rise .4s both; } @keyframes rise{ from{ opacity:0; transform:translateY(10px); } } }
+@media (prefers-reduced-motion:reduce){ .game{ transition:none; } }
+.game{ position:relative; }
+.game .new{ position:absolute; top:4px; right:4px; font:400 11px/1 var(--display); letter-spacing:.06em; color:var(--paper); background:var(--acc); padding:6px 9px; border-radius:99px; box-shadow:0 2px 8px rgba(0,0,0,.45); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div><div class="tag">7th grade TEKS · Games by Mr. Spitz 🍔</div><h1>Math 7 <span>Leaderboard</span></h1></div>
+    <a class="back" href="./">Back to the games</a>
+  </header>
+  <p class="upd" id="upd">Loading scores…</p>
+
+  <section aria-label="Pick a game">
+    <div class="games" id="games"></div>
+  </section>
+
+  <section class="panel" id="panel" hidden aria-live="polite">
+    <div class="top"><span id="p-art"></span><div><h2 id="p-title"></h2><div class="sub" id="p-sub"></div></div></div>
+    <div class="board" id="board"></div>
+  </section>
+
+  <p class="how">Want a spot? Finish a game, then send your score code with the button on the end screen. Scores show up here after your teacher checks them.</p>
+</div>
+
+<script src="games/catalog.js"></script>
+<script>
+(function(){
+var $=function(i){ return document.getElementById(i); }, CAT=window.SpitzGames||[], data={ games:{} }, sel=null;
+function esc(t){ return String(t==null?'':t).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function list(){ var ids=CAT.map(function(g){ return g.id; }), out=CAT.slice();
+  Object.keys(data.games||{}).forEach(function(id){ if(ids.indexOf(id)<0&&(window.SpitzLocked||[]).indexOf(id)<0) out.push({ id:id, name:data.games[id].name||id, acc:'#FFB020' }); });
+  return out; }
+function artOf(g){ return g.art?'<svg class="art" viewBox="0 0 200 110" aria-hidden="true">'+g.art+'</svg>':'<div class="art noart" aria-hidden="true">🏆</div>'; }
+function vars(g){ return '--acc:'+g.acc+(g.paper?';--gp:'+g.paper:'')+(g.panel?';--gpanel:'+g.panel:''); }
+function fmtDay(s){ if(!s) return ''; var p=s.split('-'); return new Date(Date.UTC(+p[0],+p[1]-1,+p[2])).toLocaleDateString(undefined,{month:'short',day:'numeric',timeZone:'UTC'}); }
+
+function render(){
+  var games=list();
+  $('games').innerHTML=games.map(function(g){ var b=data.games[g.id], t=b&&b.top&&b.top[0];
+    return '<button class="game" style="'+vars(g)+'" data-g="'+esc(g.id)+'" aria-pressed="'+(g.id===sel)+'">'+(g.isNew?'<span class="new">NEW</span>':'')+artOf(g)+'<b>'+esc(g.name)+'</b><small>'+(t?'#1 <i>'+esc(t.name)+'</i> · '+esc(t.score):'No scores yet')+'</small></button>'; }).join('');
+  var g=games.filter(function(x){ return x.id===sel; })[0];
+  if(!g){ $('panel').hidden=true; return; }
+  var b=data.games[g.id], top=(b&&b.top)||[];
+  $('panel').hidden=false; $('panel').setAttribute('style',vars(g));
+  $('p-art').innerHTML=g.art?'<svg viewBox="0 0 200 110" aria-hidden="true">'+g.art+'</svg>':'';
+  $('p-title').innerHTML=esc(g.name)+' <span>Top 10</span>';
+  $('p-sub').textContent=top.length?'Best score for each player, all question sets':'';
+  $('board').innerHTML=top.length?top.map(function(e,i){
+      var meta=[e.set,fmtDay(e.date)].filter(Boolean).join(' · ');
+      return '<div class="lb'+(i<3?' g'+(i+1):'')+'" style="animation-delay:'+(i*50)+'ms"><span class="rk">'+(i+1)+'</span><span class="nm">'+esc(e.name)+(meta?'<span class="meta">'+esc(meta)+'</span>':'')+'</span><span class="sc">'+esc(e.score)+'</span><span class="ac" title="Accuracy">'+(e.acc==null?'':esc(e.acc)+'%')+'</span></div>'; }).join('')
+    :'<div class="empty">No scores posted for '+esc(g.name)+' yet. Be the first!</div>';
+}
+function pick(id,scroll){ sel=id; try{ history.replaceState(null,'','#'+id); }catch(e){} render();
+  if(scroll&&window.innerWidth<820) $('panel').scrollIntoView({ behavior:'smooth', block:'start' }); }
+$('games').addEventListener('click',function(e){ var b=e.target.closest('.game'); if(b) pick(b.dataset.g,true); });
+
+fetch('data/leaderboard.json?t='+Date.now(),{ cache:'no-store' }).then(function(r){ if(!r.ok) throw r; return r.json(); })
+  .then(function(d){ data=d&&d.games?d:{ games:{} };
+    $('upd').textContent=data.updated?'Updated '+new Date(data.updated).toLocaleString(undefined,{ month:'short', day:'numeric', hour:'numeric', minute:'2-digit' }):'No scores posted yet.'; })
+  .catch(function(){ $('upd').textContent='Couldn’t load the scores. Refresh to try again.'; })
+  .then(function(){ var h=decodeURIComponent((location.hash||'').slice(1)), ids=list().map(function(g){ return g.id; });
+    sel=ids.indexOf(h)>=0?h:(ids.filter(function(id){ return data.games[id]&&data.games[id].top&&data.games[id].top.length; })[0]||ids[0]||null);
+    render(); });
+render();
+})();
+</script>
+</body>
+</html>

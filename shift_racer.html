@@ -1,0 +1,835 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shift Racer</title>
+<link href="https://fonts.googleapis.com/css2?family=Racing+Sans+One&family=Inter:wght@500;700;800&display=swap" rel="stylesheet">
+<style>
+:root{ --paper:#0B0B0D; --panel:#17171B; --panel-2:#222228; --text:#F6F6F8; --muted:#A3A3AE; --border:#36363F; --accent:#FFD60A;
+  --pink:#E8322E; --lime:#FFD60A; --cyan:#FFD60A; --orange:#FF8A1F;
+  --c-line:#FF4B4B; --c-m:#FFC82E; --c-b:#FF3DB4; --c-pt:#FFF04D; --c-ans:#D9A6FF; --c-x:#2DE2C8; --ok:#4ADE80; --no:#FF7A7A;
+  --display:'Racing Sans One','Inter',system-ui,sans-serif; --body:'Inter',system-ui,sans-serif;
+  --sz-mark:#E8322E; --sz-ink:#A3A3AE; --red:#E8322E;
+  --carbon:repeating-linear-gradient(45deg, rgba(255,255,255,.035) 0 6px, transparent 6px 12px), repeating-linear-gradient(-45deg, rgba(0,0,0,.35) 0 6px, transparent 6px 12px);
+  --checks:repeating-conic-gradient(#F6F6F8 0 25%, #0B0B0D 0 50%) 0 0/24px 24px; }
+*{ box-sizing:border-box; }
+html,body{ margin:0; height:100%; background:var(--paper); overflow:hidden; }
+body{ color:var(--text); font-family:var(--body); -webkit-user-select:none; user-select:none; touch-action:manipulation; }
+button{ font:inherit; color:inherit; cursor:pointer; border:0; background:none; -webkit-tap-highlight-color:transparent; }
+button:focus-visible{ outline:4px solid var(--accent); outline-offset:3px; }
+button:disabled{ cursor:default; }
+[hidden]{ display:none !important; }
+#stage{ position:absolute; left:0; top:0; width:1920px; height:1080px; transform-origin:0 0; padding:18px 28px 20px; display:grid; grid-template-rows:84px minmax(0,1fr); gap:16px; }
+
+/* top bar */
+.rc-top{ display:flex; align-items:center; gap:14px; white-space:nowrap; }
+.rc-logo{ font:400 50px/1 var(--display); margin:0 10px 0 0; letter-spacing:.02em; }
+.rc-logo b{ color:var(--pink); font-weight:400; } .rc-logo i{ color:var(--lime); font-style:normal; }
+.rc-sp{ flex:1; }
+.rc-brand{ display:flex; flex-direction:column; gap:5px; margin-right:10px; } .rc-brand .rc-logo{ margin:0; }
+.rc-credit{ font:800 18px/1 var(--body); letter-spacing:.14em; text-transform:uppercase; color:var(--muted); white-space:nowrap; }
+.rc-over .rc-credit{ position:absolute; right:36px; bottom:28px; font-size:24px; }
+.rc-chip{ height:76px; min-width:150px; padding:8px 20px; border-radius:20px; background:var(--panel); border:3px solid var(--border); display:flex; flex-direction:column; justify-content:center; }
+.rc-chip .l{ font:800 22px/1 var(--body); letter-spacing:.12em; text-transform:uppercase; color:var(--muted); }
+.rc-chip .v{ font:400 36px/1.1 var(--display); font-variant-numeric:tabular-nums; }
+#rc-fuelchip .v{ color:var(--cyan); } #rc-cashchip .v{ color:var(--lime); } #rc-streakchip .v{ color:var(--orange); }
+#rc-fuelchip.empty{ border-color:var(--no); animation:rcPulse 1s infinite; }
+@keyframes rcPulse{ 50%{ background:color-mix(in srgb,var(--no) 25%,var(--panel)); } }
+.rc-timer{ min-width:190px; align-items:center; } .rc-timer .v{ font-size:44px; }
+.rc-timer.low{ border-color:var(--no); } .rc-timer.low .v{ color:var(--no); }
+.rc-shopbtn{ height:76px; padding:0 30px; border-radius:20px; background:var(--lime); color:#10130A; font:400 32px/1 var(--display); }
+
+/* main */
+#rc-main{ display:grid; grid-template-columns:1060px minmax(0,1fr); gap:20px; min-height:0; }
+.rc-range{ position:relative; border-radius:26px; overflow:hidden; border:3px solid var(--border); background:#12251A; }
+#rc-canvas{ position:absolute; left:0; top:0; width:1054px; height:936px; cursor:pointer; touch-action:none; }
+.rc-buffs{ position:absolute; left:18px; top:16px; display:flex; gap:10px; pointer-events:none; }
+.rc-buff{ padding:10px 18px; border-radius:999px; background:rgba(10,12,16,.82); border:2px solid var(--cyan); font:800 26px/1 var(--body); }
+
+/* question panel */
+.rc-q{ min-width:0; min-height:0; border-radius:26px; background:var(--panel); border:3px solid var(--border); padding:20px 24px; display:flex; flex-direction:column; gap:12px; }
+.rc-q.nudge{ animation:rcNudge .5s 2; border-color:var(--cyan); }
+@keyframes rcNudge{ 25%{ transform:translateX(-10px); } 75%{ transform:translateX(10px); } }
+.rc-qhead{ display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.rc-tag{ padding:10px 18px; border-radius:999px; background:var(--panel-2); border:2px solid var(--border); font:800 24px/1 var(--body); letter-spacing:.1em; text-transform:uppercase; }
+.rc-reward{ font:800 26px/1 var(--body); color:var(--muted); }
+.rc-prompt{ font:700 36px/1.3 var(--body); min-height:96px; }
+.rc-prompt b{ color:var(--lime); }
+.rc-q.vis .rc-prompt{ min-height:0; }
+#rc-body{ display:flex; flex-direction:column; gap:12px; min-width:0; }
+.rc-q.vis #rc-body{ flex-direction:row; align-items:flex-start; gap:18px; }
+.rc-q.vis .rc-choices{ flex:1; min-width:0; }
+.rc-graph{ display:block; flex:none; border-radius:16px; background:#12151D; border:2px solid var(--border); }
+.rc-q > *{ flex:none; }
+.rc-q.vis .rc-fb{ min-height:150px; }
+.rc-eq{ white-space:nowrap; font-weight:800; }
+.c-m{ color:var(--c-m); } .c-pt{ color:var(--c-pt); } .c-b{ color:var(--c-b); } .c-x{ color:var(--c-x); } .c-ans{ color:var(--c-ans); }
+.rc-fr{ display:inline-flex; flex-direction:column; vertical-align:middle; text-align:center; font-size:.78em; line-height:1.05; margin:0 .08em; }
+.rc-fr span:first-child{ border-bottom:.08em solid currentColor; padding:0 .12em; }
+.rc-table{ border-collapse:collapse; font:800 34px/1 var(--body); align-self:flex-start; }
+.rc-table td,.rc-table th{ border:2px solid var(--border); padding:8px 20px; text-align:center; min-width:78px; }
+.rc-table th{ background:var(--panel-2); color:var(--muted); }
+.rc-choices{ display:flex; flex-direction:column; gap:10px; }
+.rc-ch{ min-height:76px; display:flex; align-items:center; gap:18px; padding:8px 18px; border-radius:20px; background:var(--panel-2); border:3px solid var(--border); text-align:left; font:800 36px/1.15 var(--body); }
+.rc-ch .k{ flex:none; width:52px; height:52px; border-radius:14px; display:grid; place-items:center; background:var(--paper); font:400 28px/1 var(--display); color:var(--muted); }
+.rc-ch:not(:disabled):hover{ border-color:var(--cyan); }
+.rc-ch.right{ border-color:var(--ok); background:color-mix(in srgb,var(--ok) 20%,var(--panel-2)); }
+.rc-ch.wrong{ border-color:var(--no); background:color-mix(in srgb,var(--no) 18%,var(--panel-2)); }
+.rc-ch:disabled:not(.right):not(.wrong){ opacity:.55; }
+.rc-fb{ min-height:176px; border-radius:20px; padding:16px 20px; background:var(--paper); border:2px dashed var(--border); font:600 28px/1.28 var(--body); color:var(--muted); }
+.rc-fb .h{ display:block; font:800 30px/1.2 var(--body); margin-bottom:6px; }
+.rc-fb.ok{ border:3px solid var(--ok); color:var(--text); } .rc-fb.ok .h{ color:var(--ok); }
+.rc-fb.bad{ border:3px solid var(--no); color:var(--text); } .rc-fb.bad .h{ color:var(--no); }
+.rc-next{ height:76px; border-radius:20px; background:#fff; color:#0E1016; font:400 30px/1 var(--display); flex:none; }
+.rc-next:disabled{ background:var(--panel-2); color:var(--muted); }
+
+/* shop */
+.rc-shop{ position:absolute; inset:0; z-index:5; background:rgba(9,10,14,.95); padding:26px 30px; display:flex; flex-direction:column; gap:16px; }
+.rc-shophead{ display:flex; align-items:center; gap:20px; }
+.rc-shophead h2{ margin:0; font:400 48px/1 var(--display); color:var(--lime); }
+.rc-shophead .cash{ font:400 36px/1 var(--display); }
+.rc-x{ width:76px; height:76px; border-radius:18px; background:var(--panel); border:2px solid var(--border); font:800 48px/1 var(--body); }
+.rc-sec{ font:800 24px/1 var(--body); letter-spacing:.14em; text-transform:uppercase; color:var(--muted); margin-top:6px; }
+.rc-grid{ display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+.rc-grid.three{ grid-template-columns:1fr 1fr 1fr; }
+.rc-card{ border-radius:20px; background:var(--panel); border:3px solid var(--border); padding:16px 18px; display:flex; flex-direction:column; gap:8px; min-width:0; }
+.rc-card .n{ font:800 32px/1.1 var(--body); } .rc-card .d{ font:600 26px/1.25 var(--body); color:var(--muted); min-height:33px; }
+.rc-pips{ display:flex; gap:8px; } .rc-pips span{ width:44px; height:14px; border-radius:7px; background:var(--panel-2); } .rc-pips span.on{ background:var(--lime); }
+.rc-buy{ height:72px; border-radius:16px; background:var(--lime); color:#10130A; font:400 28px/1 var(--display); margin-top:auto; }
+.rc-buy:disabled{ background:var(--panel-2); color:var(--muted); }
+
+/* overlays */
+.rc-over{ position:absolute; inset:0; z-index:15; background:rgba(8,9,13,.95); display:grid; place-items:center; text-align:center; }
+.rc-box{ width:1240px; }
+.rc-big{ margin:0; font:400 120px/1 var(--display); } .rc-big b{ color:var(--pink); font-weight:400; } .rc-big i{ color:var(--lime); font-style:normal; }
+.rc-sub{ font:700 34px/1.35 var(--body); color:var(--muted); margin:18px 0 30px; }
+.rc-steps{ display:grid; grid-template-columns:repeat(3,1fr); gap:16px; text-align:left; margin-bottom:30px; }
+.rc-step{ border-radius:20px; background:var(--panel); border:3px solid var(--border); padding:20px; font:600 30px/1.3 var(--body); }
+.rc-step b{ display:block; font:400 30px/1.2 var(--display); color:var(--lime); margin-bottom:8px; }
+.rc-row{ display:flex; justify-content:center; align-items:center; gap:16px; margin-bottom:24px; flex-wrap:wrap; }
+.rc-input{ width:520px; height:84px; border-radius:20px; border:3px solid var(--border); background:var(--panel); color:var(--text); font:800 38px/1 var(--body); padding:0 24px; -webkit-user-select:text; user-select:text; }
+.rc-input:focus{ outline:none; border-color:var(--lime); }
+.rc-len{ height:84px; padding:0 26px; border-radius:20px; background:var(--panel); border:3px solid var(--border); font:800 32px/1 var(--body); }
+.rc-len.on{ border-color:var(--lime); color:var(--lime); }
+.rc-go{ height:96px; padding:0 70px; border-radius:24px; background:var(--lime); color:#10130A; font:400 44px/1 var(--display); }
+.rc-go:disabled{ background:var(--panel-2); color:var(--muted); }
+.rc-keys{ margin-top:24px; font:600 26px/1.3 var(--body); color:var(--muted); }
+.rc-name{ font:400 56px/1.1 var(--display); color:var(--cyan); margin:10px 0 4px; word-break:break-word; }
+.rc-final{ font:400 150px/1 var(--display); color:var(--lime); margin:6px 0 0; }
+.rc-stats{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin:26px 0 16px; }
+.rc-stat{ border-radius:20px; background:var(--panel); border:3px solid var(--border); padding:16px; }
+.rc-stat .l{ font:800 22px/1.2 var(--body); letter-spacing:.1em; text-transform:uppercase; color:var(--muted); }
+.rc-stat .v{ font:400 50px/1.15 var(--display); }
+.rc-topics{ display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:28px; }
+.rc-again{ height:76px; padding:0 40px; border-radius:20px; background:var(--panel); border:3px solid var(--border); font:400 28px/1 var(--display); }
+.rc-again.arm{ border-color:var(--no); color:var(--no); }
+.rc-toast{ position:absolute; left:50%; top:110px; transform:translateX(-50%); z-index:30; padding:16px 30px; border-radius:999px; background:#fff; color:#0E1016; font:800 30px/1 var(--body); }
+#rc-confetti{ position:absolute; left:0; top:0; width:1920px; height:1080px; z-index:18; pointer-events:none; }
+
+/* ================= SHIFT RACER THEME: race day ================= */
+body{ background:#0B0B0D; }
+#stage{ background:var(--carbon), linear-gradient(180deg,#141418,#0B0B0D); }
+.rc-logo{ font-size:52px; font-style:italic; } .rc-logo i,.rc-big i{ margin-left:.22em; } .rc-logo b{ color:var(--red); } .rc-logo i{ color:var(--accent); }
+/* the top bar: slanted tach readouts with a red stripe */
+.rc-chip{ transform:skewX(-12deg); border-radius:10px; border:0; border-left:8px solid var(--red); background:var(--carbon), #19191E; }
+.rc-chip > *{ transform:skewX(12deg); }
+.rc-chip .v{ font-size:40px; font-style:italic; }
+#rc-fuelchip.empty{ border-left-color:var(--no); }
+#rc-streakchip{ border-left-color:var(--accent); } #rc-streakchip .v{ color:var(--accent); }
+.rc-shopbtn{ transform:skewX(-12deg); border-radius:10px; background:var(--accent); color:#111; }
+/* the track sits behind a checkered flag stripe */
+.rc-range{ border:0; border-radius:14px; padding-top:0; box-shadow:0 0 0 4px #222228, 0 18px 50px rgba(0,0,0,.6); }
+.rc-range::before{ content:''; position:absolute; left:0; right:0; top:0; height:18px; z-index:2; background:var(--checks); opacity:.9; pointer-events:none; }
+/* the question panel is the car's dashboard */
+.rc-q{ position:relative; border-radius:14px; border:0; background:var(--carbon), linear-gradient(180deg,#1C1C22,#121216); box-shadow:0 0 0 4px #222228, inset 0 2px 0 rgba(255,255,255,.06); padding-top:38px; }
+.rc-q::before{ content:''; position:absolute; left:0; right:0; top:0; height:18px; border-radius:14px 14px 0 0; background:var(--checks); opacity:.9; }
+.rc-q.open{ box-shadow:0 0 0 4px var(--accent); }
+.rc-tag{ transform:skewX(-12deg); border-radius:6px; border:0; background:var(--red); color:#fff; font-family:var(--display); font-weight:400; font-style:italic; letter-spacing:.06em; }
+.rc-reward{ font-family:var(--display); font-style:italic; color:var(--accent); }
+.rc-ch{ border-radius:10px; border:3px solid #34343C; background:linear-gradient(180deg,#24242B,#1A1A1F); }
+.rc-ch .k{ background:var(--red); color:#fff; font-style:italic; border-radius:8px; }
+.rc-ch:not(:disabled):hover{ border-color:var(--accent); }
+.rc-fb{ border-radius:10px; background:#0E0E11; }
+.rc-next{ transform:skewX(-8deg); border-radius:10px; background:var(--accent); color:#111; }
+.rc-shop{ background:rgba(11,11,13,.97); } .rc-shophead h2{ font-style:italic; color:var(--accent); }
+.rc-card{ border-radius:10px; border-left:8px solid var(--red); } .rc-buy{ border-radius:8px; color:#111; }
+/* start and end screens: a checkered flag across the top */
+.rc-over{ background:linear-gradient(180deg, rgba(11,11,13,.0) 0 64px, rgba(11,11,13,.97) 64px), var(--checks); }
+.rc-big{ font-size:132px; font-style:italic; text-shadow:6px 6px 0 rgba(0,0,0,.6); } .rc-big b{ color:var(--red); } .rc-big i{ color:var(--accent); }
+.rc-step{ border-radius:10px; border:0; border-left:8px solid var(--red); background:var(--carbon), #19191E; }
+.rc-step b{ color:var(--accent); font-style:italic; }
+.rc-go{ transform:skewX(-12deg); border-radius:12px; background:var(--accent); color:#111; }
+.rc-final{ color:var(--accent); font-style:italic; } .rc-name{ color:#fff; }
+.rc-stat{ border-radius:10px; border:0; border-left:8px solid var(--red); background:var(--carbon), #19191E; }
+.rc-again{ border-radius:10px; }
+
+/* ================= SPITZ ARCADE BRAND (shared by every game: keep identical) ================= */
+.sz-credit{ display:inline-flex !important; align-items:center; gap:10px; font:800 18px/1 Inter,system-ui,sans-serif !important; letter-spacing:.16em !important; text-transform:uppercase; color:var(--sz-ink) !important; white-space:nowrap; }
+.sz-credit::before{ content:''; flex:none; width:26px; height:5px; border-radius:3px; background:var(--sz-mark); }
+.sz-eyebrow{ display:inline-flex; align-items:center; gap:14px; margin:0 0 18px; font:800 24px/1 Inter,system-ui,sans-serif; letter-spacing:.34em; text-transform:uppercase; color:var(--sz-ink); }
+.sz-eyebrow::before,.sz-eyebrow::after{ content:''; width:40px; height:5px; border-radius:3px; background:var(--sz-mark); }
+.sz-eyebrow b{ color:var(--sz-mark); font-weight:800; }
+.sz-mus{ height:84px; padding:0 26px; border-radius:20px; background:var(--panel); border:3px solid var(--border); font:800 30px/1 Inter,system-ui,sans-serif; color:var(--sz-ink); white-space:nowrap; }
+.sz-mus.on{ border-color:var(--sz-mark); color:var(--text); }
+.sz-ask{ z-index:40; } .sz-ask h2{ margin:0 0 6px; font:400 84px/1.05 var(--display); color:var(--text); }
+.sz-ask .sz-askrow{ display:flex; justify-content:center; gap:20px; }
+.sz-ask button{ height:96px; padding:0 44px; border-radius:22px; font:800 32px/1 Inter,system-ui,sans-serif; background:var(--panel); border:3px solid var(--border); color:var(--text); }
+.sz-ask #sz-askyes{ background:var(--sz-mark); border-color:var(--sz-mark); color:#111; }
+[class$="-logo"]{ cursor:pointer; }
+
+/* ================= v3 LAYOUT + COLORS ================= */
+
+#stage{ grid-template-columns:repeat(5,minmax(0,1fr)) auto; grid-template-rows:84px auto minmax(0,1fr); column-gap:14px; row-gap:14px; }
+.rc-top{ display:contents; }
+.rc-brand{ grid-area:1/1/2/5; align-self:center; margin:0; align-items:flex-start; } .rc-logo{ font-size:52px; line-height:1; } .rc-logo i{ margin-left:.2em; }
+.rc-sp{ display:none; }
+/* a row of dashboard gauges under the logo */
+.rc-chip{ grid-row:2; transform:none; border-radius:50% 50% 16px 16px / 40% 40% 16px 16px; border-left:0; border-bottom:6px solid var(--red); height:auto; min-width:0; padding:12px 6px 8px; align-items:center; text-align:center; }
+.rc-chip > *{ transform:none; }
+.rc-chip .l{ font-size:17px; } .rc-chip .v{ font-size:34px; }
+#rc-streakchip{ border-bottom-color:var(--accent); } #rc-fuelchip.empty{ border-bottom-color:var(--no); }
+.rc-shopbtn{ grid-area:1/5; align-self:center; transform:none; margin:0; height:72px; }
+#rc-main{ display:contents; }
+.rc-q{ grid-area:3/1/4/6; min-height:0; }
+.rc-range{ grid-area:1/6/4/7; }
+.rc-range{ box-sizing:content-box; width:1054px; height:936px; border-width:0px; flex:none; transform:scale(1.1132); transform-origin:0 0;
+  margin:0 119.3px 106.0px 0; align-self:center; justify-self:center; }
+
+.rc-graph{ width:290px; height:290px; }
+.rc-q{ gap:10px; } .rc-fb{ font-size:24px; min-height:0; } .rc-next{ height:64px; flex:none; }
+#rc-start .rc-box{ width:1560px; text-align:left; }
+#rc-start .sz-eyebrow{ margin-left:4px; }
+#rc-start .rc-big{ font-size:170px; }
+#rc-start .rc-sub{ max-width:1100px; }
+#rc-start .rc-steps{ gap:70px; }
+#rc-start .rc-step{ position:relative; overflow:visible; }
+#rc-start .rc-step:not(:last-child)::after{ content:''; position:absolute; right:-58px; top:50%; width:46px; height:46px; transform:translateY(-50%); background:var(--checks); clip-path:polygon(0 0,100% 50%,0 100%); }
+#rc-start .rc-row{ justify-content:flex-start; } #rc-start .rc-keys{ text-align:left; }
+:root{ --sz-fs-x:0.19; }
+
+/* ================= PERF: compositor-only pulses (games/tools/perf_pass.py) ================= */
+#rc-fuelchip.empty{ animation:none; isolation:isolate; position:relative; }
+#rc-fuelchip.empty::after{ content:''; position:absolute; inset:0; border-radius:inherit; background:var(--no); opacity:0; z-index:-1; pointer-events:none; animation:szPulseO 1s infinite; }
+@keyframes szPulseO{ 50%{ opacity:.25; } }
+/* ================= /PERF ================= */
+
+/* ================= DIGITS: clear 1 and 7 (games/tools/digits_pass.py) ================= */
+@font-face{ font-family:'Spitz Digits'; font-style:normal; font-weight:100 900; font-display:block; unicode-range:U+0030-0039; src:url(data:font/woff2;base64,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) format('woff2'); }
+@font-face{ font-family:'Spitz Digits'; font-style:italic; font-weight:100 900; font-display:block; unicode-range:U+0030-0039; src:url(data:font/woff2;base64,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) format('woff2'); }
+:root{ --display:'Spitz Digits','Racing Sans One','Inter',system-ui,sans-serif; }
+/* ================= /DIGITS ================= */
+</style>
+<script>/* a hub link with an algebra set (anything but mult and int): answers can be long, so layouts that tile short answers fall back to a list */
+if(/[?&]set=(?!(?:mult|int)\b)[a-z]/.test(location.search)) document.documentElement.classList.add('sz-alg');
+var szm=/[?&]set=([a-z]+)/.exec(location.search); if(szm) document.documentElement.classList.add('sz-set-'+szm[1]);</script>
+</head>
+<body>
+<div id="stage">
+  <div class="rc-top">
+    <div class="rc-brand"><h1 class="rc-logo"><b>SHIFT</b> <i>RACER</i></h1><span class="rc-credit sz-credit">Made by Spitz 🍔</span></div>
+    <div class="rc-chip rc-timer" id="rc-timerchip"><span class="l">Time</span><span class="v" id="rc-time">5:00</span></div>
+    <span class="rc-sp"></span>
+    <div class="rc-chip"><span class="l">Score</span><span class="v" id="rc-score">0</span></div>
+    <div class="rc-chip" id="rc-fuelchip"><span class="l">Fuel</span><span class="v" id="rc-fuel">0</span></div>
+    <div class="rc-chip" id="rc-cashchip"><span class="l">Cash</span><span class="v" id="rc-cash">$0</span></div>
+    <div class="rc-chip" id="rc-streakchip"><span class="l">Gear</span><span class="v" id="rc-streak">1</span></div>
+    <button class="rc-shopbtn" id="rc-shopbtn" aria-label="Open the shop, key S">Shop</button>
+  </div>
+  <div id="rc-main">
+    <div class="rc-range" id="rc-range">
+      <canvas id="rc-canvas" width="1054" height="936" aria-label="Race track. Hold to drive, slide to change lanes."></canvas>
+      <div class="rc-buffs" id="rc-buffs"></div>
+      <div class="rc-shop" id="rc-shop" hidden>
+        <div class="rc-shophead"><h2>Pit Stop</h2><span class="cash" id="rc-shopcash">$0</span><span class="rc-sp"></span><button class="rc-x" id="rc-shopx" aria-label="Close the shop">×</button></div>
+        <div class="rc-sec">Upgrades (keep for the whole run)</div>
+        <div class="rc-grid" id="rc-upg"></div>
+        <div class="rc-sec">Power-ups (start right away)</div>
+        <div class="rc-grid three" id="rc-pow"></div>
+      </div>
+    </div>
+    <div class="rc-q" id="rc-q">
+      <div class="rc-qhead"><span class="rc-tag" id="rc-tag">Shifts</span><span class="rc-reward" id="rc-reward"></span></div>
+      <div class="rc-prompt" id="rc-prompt"></div>
+      <div id="rc-body"><div id="rc-visual"></div><div class="rc-choices" id="rc-choices"></div></div>
+      <div class="rc-fb" id="rc-fb">Answer correctly to add fuel and earn cash.</div>
+      <button class="rc-next" id="rc-next" disabled>Next question ›</button>
+    </div>
+  </div>
+
+  <div class="rc-over" id="rc-start"><div class="rc-box">
+    <div class="sz-eyebrow">Spitz <b>Arcade</b></div><h2 class="rc-big"><b>SHIFT</b> <i>RACER</i></h2>
+    <p class="rc-sub"><span class="sz-setname">Translations of linear functions: up, down, left and right.</span> You have 5 minutes: answer to fuel up, then drive as far as you can.</p>
+    <div class="rc-steps">
+      <div class="rc-step"><b>1. Answer</b>Each right answer adds fuel, earns cash and shifts you up a gear. A wrong answer costs $5 and drops you to 1st gear.</div>
+      <div class="rc-step"><b>2. Drive</b>Hold the road to drive and slide to change lanes. Dodge traffic and grab stars. Farther is more points.</div>
+      <div class="rc-step"><b>3. Upgrade</b>Spend cash in the Shop on a faster engine, a bigger fuel tank, star bonuses and power-ups.</div>
+    </div>
+    <div class="rc-row"><input class="rc-input" id="rc-nameinput" maxlength="24" placeholder="Your first and last name" autocomplete="off" aria-label="Your name"><button class="sz-mus" id="sz-mus" aria-label="Music on or off, key N">♪ Music on</button></div>
+    <button class="rc-go" id="rc-go" disabled>Start</button>
+    <div class="rc-keys">Keys: 1–4 answer · Enter next · ↑ or Space drive · ← → steer · S shop · N music · M mute · Shift+R new game · F full screen</div>
+  </div><span class="rc-credit sz-credit">Made by Spitz 🍔</span></div>
+
+  <div class="rc-over" id="rc-end" hidden><div class="rc-box"><div class="sz-eyebrow">Spitz <b>Arcade</b></div>
+    <p class="rc-sub" style="margin:0">Time! Show this screen to your teacher.</p>
+    <div class="rc-name" id="rc-endname"></div>
+    <div class="rc-final" id="rc-endscore">0</div>
+    <div class="rc-stats" id="rc-endstats"></div>
+    <div class="rc-topics" id="rc-endtopics"></div>
+    <button class="rc-again" id="rc-again">Play again</button>
+  </div><span class="rc-credit sz-credit">Made by Spitz 🍔</span></div>
+
+  <div class="rc-over sz-ask" id="sz-ask" hidden role="dialog" aria-modal="true" aria-labelledby="sz-asktitle"><div class="rc-box">
+    <h2 id="sz-asktitle">Start a new game?</h2>
+    <p class="rc-sub">This erases the current run and starts over from the beginning.</p>
+    <div class="sz-askrow"><button id="sz-askno">No, keep playing (N)</button><button id="sz-askyes">Yes, new game (Y)</button></div>
+  </div></div>
+  <canvas id="rc-confetti" width="960" height="540" aria-hidden="true"></canvas>
+  <div class="rc-toast" id="rc-toast" hidden></div>
+</div>
+
+<script src="scorecode.js"></script>
+<script src="questions.js"></script>
+<script>
+(function(){
+'use strict';
+var $=function(id){ return document.getElementById(id); };
+var KEY='shift_racer_v1';
+/* question set + topics come from the hub link (questions.js); without it the game uses its own questions below */
+var QS=window.SpitzQ?window.SpitzQ.forGame('rc'):null; if(QS) KEY+=QS.suffix;
+
+/* ================= SOUND (synthesized) ================= */
+var AC=null, muted=false;
+function ac(){ if(!AC){ var C=window.AudioContext||window.webkitAudioContext; if(!C) return null; AC=new C(); } if(AC.state==='suspended') AC.resume(); return AC; }
+function count(){ window.__snd=(window.__snd||0)+1; }
+function tone(f1,f2,t0,dur,type,vol){ var a=ac(); if(!a||muted) return; var o=a.createOscillator(), g=a.createGain(), t=a.currentTime+t0;
+  o.type=type||'sine'; o.frequency.setValueAtTime(f1,t); if(f2&&f2!==f1) o.frequency.exponentialRampToValueAtTime(f2,t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol||0.25,t+0.015); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g); g.connect(a.destination); o.start(t); o.stop(t+dur+0.03); count(); }
+function noise(t0,vol,ms,hp,lp){ var a=ac(); if(!a||muted) return; var n=Math.floor(a.sampleRate*(ms||35)/1000), buf=a.createBuffer(1,n,a.sampleRate), d=buf.getChannelData(0);
+  for(var i=0;i<n;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2);
+  var s=a.createBufferSource(), f=a.createBiquadFilter(), g=a.createGain(); s.buffer=buf; f.type=lp?'lowpass':'highpass'; f.frequency.value=lp||hp||1800; g.gain.value=vol||0.5;
+  s.connect(f); f.connect(g); g.connect(a.destination); s.start(a.currentTime+t0); count(); }
+function brass(f,t0,dur,vol){ var a=ac(); if(!a||muted) return; var t=a.currentTime+t0, g=a.createGain(), lp=a.createBiquadFilter(); vol=vol||0.14;
+  lp.type='lowpass'; lp.frequency.setValueAtTime(900,t); lp.frequency.linearRampToValueAtTime(3200,t+0.05); lp.frequency.linearRampToValueAtTime(1700,t+dur);
+  g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(vol,t+0.025); g.gain.setValueAtTime(vol,t+Math.max(0.03,dur-0.08)); g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  [-6,6].forEach(function(det){ var o=a.createOscillator(); o.type='sawtooth'; o.frequency.value=f; o.detune.value=det; o.connect(lp); o.start(t); o.stop(t+dur+0.03); });
+  lp.connect(g); g.connect(a.destination); count(); }
+var G4=392,C5=523.25,E5=659.25,G5=783.99,A5=880,B5=987.77,C6=1046.5,E6=1318.5;
+var SND={
+  star:function(){ tone(1046.5,1046.5,0,0.08,'triangle',0.15); tone(1568,1568,0.06,0.16,'triangle',0.13); },
+  gold:function(){ tone(110,330,0,0.35,'sawtooth',0.05); tone(220,660,0,0.35,'triangle',0.1); tone(C6,C6,0.3,0.25,'triangle',0.12); },   // shift up: a short rev and a ding
+  crash:function(){ noise(0,0.5,200,0,600); tone(140,50,0,0.22,'sawtooth',0.16); },
+  empty:function(){ tone(320,280,0,0.05,'triangle',0.12); tone(320,280,0.08,0.05,'triangle',0.12); },
+  correct:function(){ tone(E5,E5,0,0.12,'triangle',0.15); tone(B5,B5,0.07,0.26,'triangle',0.14); tone(E5/2,E5/2,0.07,0.26,'sine',0.07); },   // a soft two-note chime
+  cash:function(){ tone(1568,1568,0,0.06,'triangle',0.1); tone(2093,2093,0.06,0.14,'triangle',0.09); },
+  miss:function(){ tone(233,165,0.02,0.38,'triangle',0.2); },
+  tick:function(){ tone(1200,1200,0,0.05,'triangle',0.1); },
+  win:function(){ var t=0.1; tone(110,440,t,0.5,'sawtooth',0.05); brass(E5,t+0.45,0.11); brass(G5,t+0.57,0.11); brass(B5,t+0.69,0.11); [E5,G5,B5,E6].forEach(function(f){ brass(f,t+0.85,1.3,0.1); }); }
+};
+/* ================= SOUND PASS: volume trims (games/tools/sound_pass.py) */
+(function(T){ Object.keys(T).forEach(function(n){ var f=SND[n]; if(!f) return;
+  SND[n]=function(){ var a=ac(); if(!a) return f.apply(this,arguments);
+    var bus=a.createGain(); bus.gain.value=T[n]; bus.connect(a.destination);                  // this sound's own volume knob
+    Object.defineProperty(a,'destination',{configurable:true,get:function(){ return bus; }});
+    try{ return f.apply(this,arguments); } finally{ delete a.destination; } }; }); })({win:0.7});
+/* ================= /SOUND PASS */
+/* quiet engine hum that follows the car's speed; silent when stopped or muted */
+var ENG=null;
+function engine(v,on){ var a=AC; if(!a) return; if(!ENG){ var o=a.createOscillator(), g=a.createGain(), lp=a.createBiquadFilter(); o.type='sawtooth'; lp.type='lowpass'; lp.frequency.value=380; g.gain.value=0;
+    o.connect(lp); lp.connect(g); g.connect(a.destination); o.start(); ENG={o:o,g:g}; }
+  ENG.o.frequency.setTargetAtTime(52+v*0.1,a.currentTime,0.08); ENG.g.gain.setTargetAtTime(on&&!muted?0.03:0,a.currentTime,0.1); }
+
+/* ================= SONG: "Redline" (driving electro-rock, 140 bpm, E minor) =================
+   Kick and a pulsing octave bass underneath; claps, power-chord stabs and a lead on top. The top layer drops back when the car is parked. */
+var RC_CH=[[82.41,[329.63,493.88]],[65.41,[261.63,392.00]],[98.00,[392.00,587.33]],[73.42,[293.66,440.00]]];
+var RC_LEAD=[[0,659.25,3],[3,587.33,1],[4,493.88,4],[8,587.33,2],[10,659.25,2],[12,739.99,4]];
+var SONG={ level:0.1, echo:0.32,
+  want:function(){ return !!S&&S.started&&!S.over; },
+  busy:function(){ return keyGas||ptrGas; },
+  sd:function(){ return 0.107; },
+  voice:function(f,t0,dur){ brass(f,t0,dur,0.11); tone(f*2,f*2,t0,dur,'triangle',0.04); },
+  step:function(ctx,g,i,t,sd){ var bar=Math.floor(i/16), c=RC_CH[bar%4], k=i%16;
+    if(k%4===0) mKick(ctx,g.out,t,0.75,170,48);
+    if(k%2===0) mNote(ctx,g.out,'sawtooth',c[0]*(k%4===2?2:1),t,sd*1.6,0.22,520,null);                  // octave-pulse bass
+    if(k===4||k===12){ mHit(ctx,g,g.act,t,0.12,0.3,1300); mHit(ctx,g,g.act,t+0.012,0.1,0.18,1800); }   // clap
+    if(k%2===1) mHit(ctx,g,g.act,t,0.025,0.06,8000);
+    if(k===0||k===3||k===6||k===10) c[1].forEach(function(f){ mNote(ctx,g.act,'sawtooth',f/2,t,sd*(k===10?4:1.6),0.05,1500,null); });   // power-chord stabs
+    if(bar%8>=4) RC_LEAD.forEach(function(m){ if(m[0]===k) mNote(ctx,g.act,'square',m[1],t,m[2]*sd*0.95,0.05,2600,g.echo); });
+  } };
+
+/* ================= SPITZ KIT (shared by every game: music switch, jingle) =================
+   M mutes everything; N turns just the music off (remembered on this Chromebook). */
+var SZ_MUSIC_OFF=false, SZ_IN=-1e9, szOnMusic=function(){};
+try{ SZ_MUSIC_OFF=localStorage.getItem('spitz_music_off')==='1'; }catch(e){}
+['pointerdown','keydown'].forEach(function(n){ addEventListener(n,function(){ SZ_IN=Date.now(); },true); });
+function szActive(ms){ return Date.now()-SZ_IN<(ms||2500); }
+function musicToggle(){ SZ_MUSIC_OFF=!SZ_MUSIC_OFF; try{ localStorage.setItem('spitz_music_off',SZ_MUSIC_OFF?'1':'0'); }catch(e){} musBtn(); toast(SZ_MUSIC_OFF?'Music off':'Music on'); szOnMusic(); }
+function musBtn(){ var b=document.getElementById('sz-mus'); if(b){ b.textContent=SZ_MUSIC_OFF?'♪ Music off':'♪ Music on'; b.classList.toggle('on',!SZ_MUSIC_OFF); } }
+/* the Spitz jingle: the same notes open every game, played on that game's own instrument */
+var JINGLE=[[392.00,0,0.12],[523.25,0.13,0.12],[659.25,0.26,0.12],[783.99,0.40,0.34],[659.25,0.78,0.12],[783.99,0.92,0.7]];
+function jingle(){ JINGLE.forEach(function(n){ SZ_VOICE(n[0],n[1],n[2]); }); }
+
+/* ================= SPITZ MUSIC (shared engine; the game supplies SONG) =================
+   Synthesized, no audio files. It plays only during a run, sits under the sound effects (25 Chromebooks play it at once),
+   and backs off while the student reads a question. */
+var MUS={ on:false, g:null, i:0, t:0 }, SZ_VOICE=function(f,t0,dur){ SONG.voice(f,t0,dur); };
+function musGraph(ctx,dest){ var out=ctx.createGain(), act=ctx.createGain(), d=ctx.createDelay(1), fb=ctx.createGain(), wet=ctx.createGain(); out.gain.value=SONG.level; out.connect(dest); act.connect(out);
+  d.delayTime.value=SONG.echo||0.3; fb.gain.value=0.28; wet.gain.value=0.3; d.connect(fb); fb.connect(d); d.connect(wet); wet.connect(act);
+  var n=Math.floor(ctx.sampleRate*0.3), buf=ctx.createBuffer(1,n,ctx.sampleRate), ch=buf.getChannelData(0); for(var i=0;i<n;i++) ch[i]=Math.random()*2-1;
+  return {out:out,act:act,echo:d,noise:buf}; }
+function mNote(ctx,to,type,fr,t,dur,vol,cut,echo,att){ var o=ctx.createOscillator(), f=ctx.createBiquadFilter(), e=ctx.createGain(); o.type=type; o.frequency.value=fr; f.type='lowpass'; f.frequency.value=cut||2400;
+  e.gain.setValueAtTime(0.0001,t); e.gain.exponentialRampToValueAtTime(vol,t+(att||0.008)); e.gain.setValueAtTime(vol,t+Math.max(att||0.008,dur*0.55)); e.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(f); f.connect(e); e.connect(to); if(echo) e.connect(echo); o.start(t); o.stop(t+dur+0.03); return o; }
+function mHit(ctx,g,to,t,dur,vol,hp,lp){ var s=ctx.createBufferSource(), f=ctx.createBiquadFilter(), e=ctx.createGain(); s.buffer=g.noise; f.type=lp?'lowpass':'highpass'; f.frequency.value=lp||hp;
+  e.gain.setValueAtTime(vol,t); e.gain.exponentialRampToValueAtTime(0.0001,t+dur); s.connect(f); f.connect(e); e.connect(to); s.start(t); s.stop(t+dur+0.03); }
+function mKick(ctx,to,t,vol,hi,lo){ var o=ctx.createOscillator(), e=ctx.createGain(); o.type='sine'; o.frequency.setValueAtTime(hi||200,t); o.frequency.exponentialRampToValueAtTime(lo||48,t+0.12);
+  e.gain.setValueAtTime(0.0001,t); e.gain.exponentialRampToValueAtTime(vol||0.8,t+0.005); e.gain.exponentialRampToValueAtTime(0.0001,t+0.2); o.connect(e); e.connect(to); o.start(t); o.stop(t+0.22); }
+function musicTick(){ var a=AC, want=SONG.want()&&!muted&&!SZ_MUSIC_OFF;
+  if(!want){ if(MUS.on){ MUS.on=false; var g=MUS.g; MUS.g=null; if(g&&a){ g.out.gain.setTargetAtTime(0,a.currentTime,0.2); setTimeout(function(){ try{ g.out.disconnect(); }catch(e){} },1400); } } return; }
+  if(!a||a.state!=='running') return;                                              // browsers hold sound until the first click or key press
+  if(!MUS.on){ MUS.on=true; MUS.g=musGraph(a,a.destination); MUS.g.out.gain.setValueAtTime(0.0001,a.currentTime); MUS.g.out.gain.linearRampToValueAtTime(SONG.level,a.currentTime+1.2); MUS.i=0; MUS.t=a.currentTime+0.1; }
+  MUS.g.act.gain.setTargetAtTime(SONG.busy()?1:0.35,a.currentTime,0.35);            // playing: full band. Reading a question: it backs off so they can think
+  if(MUS.t<a.currentTime) MUS.t=a.currentTime+0.05;                                 // the tab was in the background: pick up from now
+  while(MUS.t<a.currentTime+0.5){ var sd=SONG.sd(); SONG.step(a,MUS.g,MUS.i,MUS.t,sd); MUS.t+=sd; MUS.i++; } }
+setInterval(musicTick,120);
+/* test hook: render the music off line and measure it */
+window.__music=function(sec){ var C=window.OfflineAudioContext||window.webkitOfflineAudioContext, c=new C(1,44100*sec,44100), g=musGraph(c,c.destination), t=0.05, i=0;
+  while(t<sec){ var sd=SONG.sd(); SONG.step(c,g,i,t,sd); t+=sd; i++; }
+  return c.startRendering().then(function(buf){ var d=buf.getChannelData(0), pk=0, sq=0, bad=0, n=d.length; for(var j=0;j<n;j++){ var v=d[j]; if(v!==v) bad++; pk=Math.max(pk,Math.abs(v)); sq+=v*v; }
+    return {peak:pk, rms:Math.sqrt(sq/n), bad:bad, steps:i}; }); };
+
+/* ================= CONFETTI (always on, even with reduced motion) ================= */
+var parts=[], craf=0, cfLast=0, cfSeen=0, CFC=['#E8322E','#FFD60A','#F6F6F8','#111111','#FF8A1F','#FFF04D','#FFFFFF'];
+function confetti(x,y,n,spread){ for(var i=0;i<n;i++){ var a=-Math.PI/2+(Math.random()-0.5)*spread, sp=8+Math.random()*15;
+    parts.push({x:x,y:y,vx:Math.cos(a)*sp,vy:Math.sin(a)*sp,w:10+Math.random()*12,h:6+Math.random()*8,r:Math.random()*6.28,vr:(Math.random()-0.5)*0.5,c:CFC[i%CFC.length],life:0,max:85+Math.random()*60}); }
+  if(parts.length>700) parts=parts.slice(-700);
+  window.__conf=(window.__conf||0)+n; if(!craf||Date.now()-cfSeen>400){ if(craf) cancelAnimationFrame(craf); cfLast=0; craf=requestAnimationFrame(cfStep); } }
+function cfStep(ts){ craf=0; cfSeen=Date.now(); var f=cfLast?Math.min(6,(ts-cfLast)/16.67):1; cfLast=ts; var cfv=$('rc-confetti'), c=cfv.getContext('2d'), cfk=cfv.width/1920; c.setTransform(cfk,0,0,cfk,0,0); c.clearRect(0,0,1920,1080);
+  parts=parts.filter(function(p){ return p.life<p.max&&p.y<1120; });
+  var d1=Math.pow(0.985,f), d2=Math.pow(0.992,f);
+  parts.forEach(function(p){ p.life+=f; p.vy+=0.42*f; p.vx*=d1; p.vy*=d2; p.x+=p.vx*f; p.y+=p.vy*f; p.r+=p.vr*f; var k=Math.cos(p.life*0.2);
+    c.save(); c.translate(p.x,p.y); c.rotate(p.r); c.globalAlpha=Math.min(1,(p.max-p.life)/25); c.fillStyle=p.c; c.fillRect(-p.w/2,-p.h/2*k,p.w,p.h*k); c.restore(); });
+  craf=parts.length? requestAnimationFrame(cfStep) : (c.clearRect(0,0,1920,1080),0); }
+var toastT=0; function toast(msg){ var t=$('rc-toast'); t.textContent=msg; t.hidden=false; clearTimeout(toastT); toastT=setTimeout(function(){ t.hidden=true; },1500); }
+function stagePoint(el,dx,dy){ var r=el.getBoundingClientRect(), s=$('stage').getBoundingClientRect(), k=1920/s.width; return [(r.left-s.left)*k+(dx||0),(r.top-s.top)*k+(dy||0)]; }
+
+/* ================= MATH HELPERS (exact: integers and reduced fractions only) ================= */
+var MINUS='−';
+function gcd(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ var t=a%b; a=b; b=t; } return a; }
+function R(n,d){ if(d<0){ n=-n; d=-d; } var g=gcd(n,d)||1; return {n:n/g,d:d/g}; }
+function ri(a,b){ return a+Math.floor(Math.random()*(b-a+1)); }
+function nz(a,b){ var v; do{ v=ri(a,b); }while(v===0); return v; }
+function pick(a){ return a[Math.floor(Math.random()*a.length)]; }
+function num(n){ return n<0? MINUS+(-n) : ''+n; }
+function frac(n,d){ return '<span class="rc-fr"><span>'+n+'</span><span>'+d+'</span></span>'; }
+function fmtR(r){ if(r.d===1) return num(r.n); return (r.n<0?MINUS:'')+frac(Math.abs(r.n),r.d); }
+function coef(r,v){ if(r.d===1&&r.n===1) return v; if(r.d===1&&r.n===-1) return MINUS+v; return fmtR(r)+v; }
+function pt(x,y){ return '('+num(x)+', '+num(y)+')'; }
+function sgn(v){ return v>0? ' + '+v : v<0? ' '+MINUS+' '+(-v) : ''; }
+function psStr(m,h,k){ var c=(m.d===1&&m.n===1)?'':(m.d===1&&m.n===-1)?MINUS:fmtR(m); return 'y'+sgn(-k)+' = '+c+'(x'+sgn(-h)+')'; }
+function siStr(m,b){ return 'y = '+coef(m,'x')+sgn(b); }
+function stdNorm(A,B,C){ var g=gcd(gcd(A,B),C)||1; A/=g; B/=g; C/=g; if(A<0||(A===0&&B<0)){ A=-A; B=-B; C=-C; } return {A:A,B:B,C:C}; }
+function stdStr(L){ var a=L.A===1?'x':L.A===-1?MINUS+'x':num(L.A)+'x';
+  var b=L.B===1?' + y':L.B===-1?' '+MINUS+' y':L.B>0?' + '+L.B+'y':' '+MINUS+' '+(-L.B)+'y'; return a+b+' = '+num(L.C); }
+function linePS(m,h,k){ return {A:-m.n,B:m.d,C:m.d*k-m.n*h}; }          // y-k=m(x-h)  ->  -p x + q y = qk - ph
+function lineSI(m,b){ return {A:-m.n,B:m.d,C:m.d*b}; }
+function sameLine(a,b){ return a.A*b.B===b.A*a.B && a.A*b.C===b.A*a.C && a.B*b.C===b.B*a.C; }
+function onLine(L,x,y){ return L.A*x+L.B*y===L.C; }
+function eq(h){ return '<span class="rc-eq">'+h+'</span>'; }
+function M(r){ return '<span class="c-m">'+fmtR(r)+'</span>'; }
+function P(x,y){ return '<span class="c-pt">'+pt(x,y)+'</span>'; }
+var SLOPES=[2,-2,3,-3,4,-4,5,-5].map(function(n){ return R(n,1); }).concat(
+  [[1,2],[-1,2],[1,3],[-1,3],[2,3],[-2,3],[3,2],[-3,2],[3,4],[-3,4]].map(function(a){ return R(a[0],a[1]); }));
+function C(html,val,why){ return {html:html,val:val,why:why||'',key:html}; }
+function rEq(a,b){ return a.n*b.d===b.n*a.d; }
+function siRev(m,b){ var a=R(Math.abs(m.n),m.d); return 'y = '+num(b)+(m.n>0?' + ':' '+MINUS+' ')+coef(a,'x'); }   // y = 4 − 3x
+function B(v){ return '<span class="c-b">'+v+'</span>'; }
+
+/* translation helpers */
+var W_OUT='The number is outside the parentheses, so the graph moves up or down.';
+var W_IN='The number is inside with x, so the graph moves left or right.';
+function fnot(dx,dy){ return 'f(x'+sgn(-dx)+')'+sgn(dy); }                               // f(x − 3) + 4
+function dirStr(dx,dy){ var k=Math.abs(dx||dy); return (dx?(dx>0?'Right ':'Left '):(dy>0?'Up ':'Down '))+k+(k===1?' unit':' units'); }
+function low(s){ return s.charAt(0).toLowerCase()+s.slice(1); }
+function CD(dx,dy,why){ return C(dirStr(dx,dy),{dx:dx,dy:dy},why); }
+function CN(dx,dy,why,bare){ return C((bare?'':'g(x) = ')+fnot(dx,dy),{dx:dx,dy:dy},why); }
+function fx(n,m,b){ return n+'(x) = '+coef(m,'x')+sgn(b); }
+function CL(m,b,why){ return C(fx('g',m,b),lineSI(m,b),why); }
+function moved(m,px,py,dx,dy){ return linePS(m,px+dx,py+dy); }                            // the line through (px,py) with slope m, slid by (dx,dy)
+var GS=[R(2,1),R(-2,1),R(3,1),R(-3,1),R(1,2),R(-1,2)];
+
+/* graph: window −6..6. f is dashed gray, g is the red line (lesson color). Each line = {m,px,py}. */
+function graphSVG(f,g,dots,dotCol){ var S=380, u=S/12, X=function(x){ return ((x+6)*u).toFixed(1); }, Y=function(y){ return ((6-y)*u).toFixed(1); }, h='';
+  for(var i=-6;i<=6;i++){ h+='<line x1="'+X(i)+'" y1="0" x2="'+X(i)+'" y2="'+S+'" stroke="#2A3142" stroke-width="2"/><line x1="0" y1="'+Y(i)+'" x2="'+S+'" y2="'+Y(i)+'" stroke="#2A3142" stroke-width="2"/>'; }
+  h+='<line x1="0" y1="'+Y(0)+'" x2="'+S+'" y2="'+Y(0)+'" stroke="#C9D1E0" stroke-width="3"/><line x1="'+X(0)+'" y1="0" x2="'+X(0)+'" y2="'+S+'" stroke="#C9D1E0" stroke-width="3"/>';
+  [-4,-2,2,4].forEach(function(n){ h+='<text x="'+X(n)+'" y="'+(+Y(0)+24)+'" text-anchor="middle" font-size="20" font-weight="800" fill="#9BA5B8" font-family="Inter,sans-serif">'+num(n)+'</text>'+
+    '<text x="'+(+X(0)-8)+'" y="'+(+Y(n)+7)+'" text-anchor="end" font-size="20" font-weight="800" fill="#9BA5B8" font-family="Inter,sans-serif">'+num(n)+'</text>'; });
+  function seg(L,attr){ var y1=L.py+L.m.n*(-7-L.px)/L.m.d, y2=L.py+L.m.n*(7-L.px)/L.m.d; return '<line x1="'+X(-7)+'" y1="'+Y(y1)+'" x2="'+X(7)+'" y2="'+Y(y2)+'" '+attr+'/>'; }
+  h+=seg(f,'stroke="#C9D1E0" stroke-width="5" stroke-dasharray="14 10"')+seg(g,'stroke="#FF4B4B" stroke-width="6" stroke-linecap="round"');
+  (dots||[]).forEach(function(p){ h+='<circle cx="'+X(p[0])+'" cy="'+Y(p[1])+'" r="9" fill="'+dotCol+'" stroke="#0E1016" stroke-width="3"/>'; });
+  var lx=f.m.n>0?8:S-112;
+  h+='<rect x="'+lx+'" y="8" width="104" height="72" rx="10" fill="#0E1016" fill-opacity=".88" stroke="#343B4D" stroke-width="2"/>'+
+     '<path d="M'+(lx+12)+' 30h40" stroke="#C9D1E0" stroke-width="5" stroke-dasharray="12 8"/><text x="'+(lx+64)+'" y="38" font-size="24" font-weight="800" fill="#C9D1E0" font-family="Inter,sans-serif">f</text>'+
+     '<path d="M'+(lx+12)+' 60h40" stroke="#FF4B4B" stroke-width="6"/><text x="'+(lx+64)+'" y="68" font-size="24" font-weight="800" fill="#FF4B4B" font-family="Inter,sans-serif">g</text>';
+  return '<svg class="rc-graph" viewBox="0 0 '+S+' '+S+'" width="'+S+'" height="'+S+'" viewBox="0 0 '+S+' '+S+'" role="img" aria-label="Graph of two lines: f dashed and g solid red">'+h+'</svg>'; }
+
+/* ================= QUESTION GENERATORS =================
+   Each returns {topic,prompt,visual,choices[0]=correct,explain,data,check}. check(val) is an independent
+   test of whether a choice is right; the build step rejects any question where a distractor also passes. */
+var GEN={
+vDescribe:function(){ var d=nz(-9,9);
+  return { topic:'Vertical shifts', prompt:'How does '+eq('g(x) = '+fnot(0,d))+' move the graph of f(x)?', data:{dx:0,dy:d},
+    check:function(v){ return v.dx===0&&v.dy===d; },
+    choices:[ CD(0,d), CD(0,-d,'Outside the parentheses the sign means what it says: + is up, '+MINUS+' is down.'), CD(d,0,W_OUT), CD(-d,0,W_OUT) ],
+    explain:'A number <b>outside</b> f(x) changes the outputs, so the graph moves up or down: '+eq(fnot(0,d))+' is '+low(dirStr(0,d))+'.' }; },
+hDescribe:function(){ var c=nz(-9,9);
+  return { topic:'Horizontal shifts', prompt:'How does '+eq('g(x) = '+fnot(c,0))+' move the graph of f(x)?', data:{dx:c,dy:0},
+    check:function(v){ return v.dx===c&&v.dy===0; },
+    choices:[ CD(c,0), CD(-c,0,'Inside the parentheses the shift goes opposite the sign: x '+MINUS+' is right, x + is left.'), CD(0,c,W_IN), CD(0,-c,W_IN) ],
+    explain:'A number <b>inside</b> with x moves the graph left or right, opposite the sign: '+eq(fnot(c,0))+' is '+low(dirStr(c,0))+'.' }; },
+vWrite:function(){ var d=nz(-9,9), w='Inside the parentheses moves the graph left or right. Up and down go outside.';
+  return { topic:'Vertical shifts', prompt:'The graph of f(x) is translated <b>'+low(dirStr(0,d))+'</b>. Which equation is g(x)?', data:{dx:0,dy:d},
+    check:function(v){ return v.dx===0&&v.dy===d; },
+    choices:[ CN(0,d), CN(0,-d,'Outside the parentheses, up is + and down is '+MINUS+'.'), CN(d,0,w), CN(-d,0,w) ],
+    explain:'Up and down go <b>outside</b> the parentheses: '+low(dirStr(0,d))+' is '+eq('g(x) = '+fnot(0,d))+'.' }; },
+hWrite:function(){ var c=nz(-9,9), w='Outside the parentheses moves the graph up or down. Left and right go inside with x.';
+  return { topic:'Horizontal shifts', prompt:'The graph of f(x) is translated <b>'+low(dirStr(c,0))+'</b>. Which equation is g(x)?', data:{dx:c,dy:0},
+    check:function(v){ return v.dx===c&&v.dy===0; },
+    choices:[ CN(c,0), CN(-c,0,'Inside goes opposite the sign: right is x '+MINUS+' a number, left is x + a number.'), CN(0,c,w), CN(0,-c,w) ],
+    explain:'Left and right go <b>inside</b> with x, opposite the sign: '+low(dirStr(c,0))+' is '+eq('g(x) = '+fnot(c,0))+'.' }; },
+newYInt:function(){ var m=pick(SLOPES), b=nz(-9,9), d=nz(-9,9), nb=b+d, L=moved(m,0,b,0,d);
+  return { topic:'Vertical shifts', prompt:eq(fx('f',m,b))+' is translated <b>'+low(dirStr(0,d))+'</b>. What is the new <span class="c-b">y-intercept</span>?', data:{m:m,b:b,dy:d},
+    check:function(v){ return v.n!==undefined&&rEq(v,R(L.C,L.B)); },                 /* y where the moved line meets x = 0 */
+    choices:[ C(num(nb),R(nb,1)), C(num(b-d),R(b-d,1),'Up adds to b and down subtracts. This shift is '+(d>0?'up':'down')+'.'),
+      C(num(Math.abs(d)),R(Math.abs(d),1),'That is the size of the shift. Start at b = '+num(b)+' and move '+low(dirStr(0,d))+'.'),
+      C(num(b),R(b,1),'That is the old y-intercept. The whole line moved, so b changes.') ],
+    explain:'Start at b = '+num(b)+' and move '+low(dirStr(0,d))+': the new y-intercept is '+B(num(nb))+'.' }; },
+eqV:function(){ var m=pick(SLOPES), b=nz(-9,9), d=nz(-9,9), ms=R(m.n+d*m.d,m.d), L=moved(m,0,b,0,d); if(ms.n===0) return null;
+  return { topic:'New equations', prompt:eq(fx('f',m,b))+' and '+eq('g(x) = '+fnot(0,d))+'. Which is g(x)?', data:{m:m,b:b},
+    check:function(v){ return v.A!==undefined&&sameLine(v,L); },
+    choices:[ CL(m,b+d), CL(m,b-d,'Check the sign: '+fnot(0,d)+' shifts '+(d>0?'up':'down')+', so b goes '+(d>0?'up':'down')+' by '+Math.abs(d)+'.'),
+      CL(ms,b,'A translation never changes the slope. Only b changes here.'),
+      CL(m,d,'That replaces b with the shift. Add the shift to b instead.') ],
+    explain:'Same slope, and b changes by the shift: '+num(b)+sgn(d)+' = '+B(num(b+d))+'.' }; },
+eqH:function(){ var m=R(pick([2,-2,3,-3,4,-4]),1), b=nz(-6,6), c=nz(-4,4), nb=b-m.n*c, L=moved(m,0,b,c,0); if(m.n===c) return null;
+  var inner=num(m.n)+'(x'+sgn(-c)+')'+sgn(b);
+  return { topic:'New equations', prompt:eq(fx('f',m,b))+' and '+eq('g(x) = '+fnot(c,0))+'. Which is g(x)?', data:{m:m,b:b},
+    check:function(v){ return v.A!==undefined&&sameLine(v,L); },
+    choices:[ CL(m,nb), CL(m,b-c,'Distribute: in '+eq(inner)+' the '+num(m.n)+' multiplies the '+Math.abs(c)+' too.'),
+      CL(m,b+m.n*c,'Sign slip. Substitute exactly what is inside: '+eq(inner)+'.'),
+      CL(R(m.n-c,1),b,'The slope stays '+num(m.n)+'. Replace x with (x'+sgn(-c)+') instead.') ],
+    explain:'Replace x with (x'+sgn(-c)+'): '+eq(inner)+' = '+eq(num(m.n)+'x'+sgn(-m.n*c)+sgn(b))+', so '+eq(fx('g',m,nb))+'.' }; },
+eqCompare:function(){ var m=pick(SLOPES), b=nz(-9,9), d=nz(-9,9), b2=b+d, L=lineSI(m,b2); if(b2===0) return null;
+  return { topic:'New equations', prompt:eq(fx('f',m,b))+' and '+eq(fx('g',m,b2))+'. How was f(x) shifted up or down to make g(x)?', data:{m:m,b:b,b2:b2},
+    check:function(v){ return v.dx===0&&sameLine(moved(m,0,b,0,v.dy),L); },
+    choices:[ CD(0,d), CD(0,-d,'Compare the y-intercepts: b goes from '+num(b)+' to '+num(b2)+', which is '+(d>0?'up':'down')+'.'),
+      CD(0,b2,'That is g’s y-intercept. The shift is the change in b.'), CD(0,b,'That is f’s y-intercept. The shift is the change in b.') ],
+    explain:'The slopes match, so only b changed: from '+num(b)+' to '+num(b2)+' is '+low(dirStr(0,d))+'.' }; },
+slopeStays:function(){ var m=pick(SLOPES), b=nz(-9,9), s=nz(-9,9), hz=Math.random()<0.5, dx=hz?s:0, dy=hz?0:s, L=moved(m,0,b,dx,dy);
+  var ms=R(m.n+s*m.d,m.d), ng=R(-m.n,m.d); if(Math.abs(s)<2) return null;
+  return { topic:'New equations', prompt:eq(fx('f',m,b))+' is translated <b>'+low(dirStr(dx,dy))+'</b>. What is the <span class="c-m">slope</span> of the new line?', data:{m:m},
+    check:function(v){ return v.n!==undefined&&rEq(v,R(-L.A,L.B)); },                /* slope read off the moved line */
+    choices:[ C(fmtR(m),m), C(fmtR(ms),ms,'Don’t add the shift to the slope. A translation slides the line without tilting it.'),
+      C(fmtR(ng),ng,'A slide never flips a line. The slope keeps its sign.'),
+      C(num(s),R(s,1),'That is the shift. The slope is still the number with x.') ],
+    explain:'A translation slides every point the same way, so the line stays just as steep. The slope is still '+M(m)+'.' }; },
+graphEq:function(){ var m=pick(GS), b=ri(-4,4), d=nz(-6,6); if(Math.abs(d)<2||Math.abs(b+d)>5) return null; var L=moved(m,0,b,0,d);
+  var w='The line moved up or down, so the number goes outside the parentheses.';
+  return { topic:'Graphs', prompt:'f (dashed) slides up or down to make g (red). Which is g(x)?', data:{m:m,fp:[0,b]},
+    visual:graphSVG({m:m,px:0,py:b},{m:m,px:0,py:b+d},[[0,b],[0,b+d]],'#FF3DB4'),
+    check:function(v){ return v.dx!==undefined&&sameLine(moved(m,0,b,v.dx,v.dy),L); },
+    choices:[ CN(0,d,'',1), CN(0,-d,'The red line crosses the y-axis '+(d>0?'above':'below')+' the dashed one, so the shift is '+(d>0?'up':'down')+'.',1), CN(d,0,w,1), CN(-d,0,w,1) ],
+    explain:'Count between the y-intercepts: '+low(dirStr(0,d))+', so '+eq('g(x) = '+fnot(0,d))+'.' }; },
+graphHow:function(){ var m=pick(GS), b=ri(-4,4), d=nz(-6,6); if(Math.abs(d)<2||Math.abs(b+d)>5) return null; var L=moved(m,0,b,0,d);
+  var k=Math.abs(d), h=k*m.d/Math.abs(m.n), alt=(h%1===0&&h!==k)?h:(k<6?k+1:k-1), sg=d>0?1:-1, w='Count along the y-axis, from one y-intercept to the other.';
+  return { topic:'Graphs', prompt:'f (dashed) slides up or down to make g (red). How far?', data:{m:m,fp:[0,b]},
+    visual:graphSVG({m:m,px:0,py:b},{m:m,px:0,py:b+d},[[0,b],[0,b+d]],'#FF3DB4'),
+    check:function(v){ return v.dx===0&&sameLine(moved(m,0,b,0,v.dy),L); },
+    choices:[ CD(0,d), CD(0,-d,'The red line crosses the y-axis '+(d>0?'above':'below')+' the dashed one, so the shift is '+(d>0?'up':'down')+'.'), CD(0,sg*alt,w), CD(0,-sg*alt,w) ],
+    explain:'From the dashed line’s y-intercept to the red line’s y-intercept is '+low(dirStr(0,d))+'.' }; },
+graphH:function(){ var m=pick(GS), a=ri(-4,4), c=nz(-6,6); if(Math.abs(c)<2||Math.abs(a+c)>5) return null; var L=linePS(m,a+c,0);
+  var w='The line moved left or right, so the number goes inside with x.';
+  return { topic:'Graphs', prompt:'f (dashed) slides left or right to make g (red). Which is g(x)?', data:{m:m,fp:[a,0]},
+    visual:graphSVG({m:m,px:a,py:0},{m:m,px:a+c,py:0},[[a,0],[a+c,0]],'#2DE2C8'),
+    check:function(v){ return v.dx!==undefined&&sameLine(moved(m,a,0,v.dx,v.dy),L); },
+    choices:[ CN(c,0,'',1), CN(-c,0,'Inside goes opposite the sign: the line moved '+(c>0?'right':'left')+', so it is x '+(c>0?MINUS:'+')+' '+Math.abs(c)+'.',1), CN(0,c,w,1), CN(0,-c,w,1) ],
+    explain:'Count between the x-intercepts: '+low(dirStr(c,0))+'. Inside goes opposite the sign: '+eq('g(x) = '+fnot(c,0))+'.' }; }
+};
+var TOPICS={ 'Vertical shifts':['vDescribe','vWrite','newYInt'], 'Horizontal shifts':['hDescribe','hWrite'], 'Graphs':['graphEq','graphHow','graphH'], 'New equations':['eqV','eqH','eqCompare','slopeStays'] };
+var BAG=['Vertical shifts','Vertical shifts','Horizontal shifts','Horizontal shifts','Graphs','Graphs','New equations','New equations'];
+function build(type){ for(var tries=0;tries<400;tries++){ var q=GEN[type](); if(!q) continue;
+    var keys=q.choices.map(function(c){ return c.key; }); if(new Set(keys).size!==4) continue;
+    if(!q.check(q.choices[0].val)) continue;                                                  // the answer must pass the independent check
+    if(q.choices.slice(1).some(function(c){ return q.check(c.val); })) continue;              // and no distractor may pass it
+    q.type=type; q.choices.forEach(function(c,i){ c.ok=i===0; });
+    for(var i=3;i>0;i--){ var j=Math.floor(Math.random()*(i+1)), t=q.choices[i]; q.choices[i]=q.choices[j]; q.choices[j]=t; }
+    q.visual=q.visual||''; delete q.check; return q; } throw new Error('generator failed: '+type); }
+var topicBag=[], lastType='';
+function nextQuestion(){ if(QS) return QS.next(); if(!topicBag.length) topicBag=BAG.slice().sort(function(){ return Math.random()-0.5; });
+  var tp=topicBag.pop(), list=TOPICS[tp], type; do{ type=pick(list); }while(type===lastType&&list.length>1); lastType=type; return build(type); }
+
+/* test hook: re-derive every answer from the words and pictures the student actually sees, separately from the generator */
+function txt(h){ return h.replace(/<[^>]+>/g,''); }
+function parseNot(s){ var m=txt(s||'').match(/f\(x(?: ([+−]) (\d+))?\)(?: ([+−]) (\d+))?/); if(!m) return null; return {dx:m[1]?(m[1]==='−'?1:-1)*m[2]:0, dy:m[3]?(m[3]==='−'?-1:1)*m[4]:0}; }
+function parseDir(s){ var m=txt(s||'').match(/(up|down|left|right) (\d+) units?/i); if(!m) return null; var k=+m[2], w=m[1].toLowerCase(); return {dx:w==='right'?k:w==='left'?-k:0, dy:w==='up'?k:w==='down'?-k:0}; }
+function same(a,b){ return !!a&&!!b&&a.dx===b.dx&&a.dy===b.dy; }
+function verifyQ(q){ var c=q.choices.filter(function(x){ return x.ok; }), d=q.data, v, e=[], T=q.type;
+  if(c.length!==1) return ['not exactly one correct']; v=c[0].val;
+  q.choices.forEach(function(x){ if(!x.ok&&!x.why) e.push('no why'); if(x.val.dx!==undefined&&!same(parseNot(x.html)||parseDir(x.html),x.val)) e.push('label does not say its value: '+txt(x.html)); });
+  var shown=parseNot(q.prompt.split('g(x) = ')[1]), told=parseDir(q.prompt);
+  if((T==='vDescribe'||T==='hDescribe')&&!same(shown,v)) e.push(T);
+  if((T==='vWrite'||T==='hWrite')&&!same(told,v)) e.push(T);
+  if(T==='eqV'||T==='eqH'){ var p1=[shown.dx,d.b+shown.dy]; if(!(onLine(v,p1[0],p1[1])&&onLine(v,p1[0]+d.m.d,p1[1]+d.m.n))) e.push(T); }
+  if(T==='eqCompare'&&!(v.dx===0&&v.dy===d.b2-d.b)) e.push(T);
+  if(T==='newYInt'&&!rEq(v,R(d.b+told.dy,1))) e.push(T);
+  if(T==='slopeStays'&&!rEq(v,d.m)) e.push(T);
+  if(/^graph/.test(T)){ var u=380/12, rd=q.visual.match(/x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="([-\d.]+)" stroke="#FF4B4B"/), ds=q.visual.match(/x1="([-\d.]+)" y1="([-\d.]+)" x2="([-\d.]+)" y2="([-\d.]+)" stroke="#C9D1E0" stroke-width="5"/);
+    if(!rd||!ds) e.push('no line'); else { var miss=function(mm,p){ var P1=[mm[1]/u-6,6-mm[2]/u], P2=[mm[3]/u-6,6-mm[4]/u]; return Math.abs((P2[0]-P1[0])*(p[1]-P1[1])-(P2[1]-P1[1])*(p[0]-P1[0]))>0.6; };
+      var f1=d.fp, f2=[d.fp[0]+d.m.d,d.fp[1]+d.m.n]; [f1,f2].forEach(function(p){ if(miss(ds,p)) e.push('dashed line misses '+p); var g=[p[0]+v.dx,p[1]+v.dy]; if(miss(rd,g)) e.push('red line misses '+g); }); } }
+  return e; }
+window.__verify=function(n){ var out={}; Object.keys(GEN).forEach(function(t){ var bad=0, ex=null; for(var i=0;i<n;i++){ var q=build(t), er=verifyQ(q); if(er.length){ bad++; ex=ex||{e:er,q:q.prompt}; } } out[t]={bad:bad,ex:ex}; }); return out; };
+
+
+/* ================= GAME STATE ================= */
+var UPG=[
+  {id:'fuel',   name:'Fuel Tank',  vals:[6,9,13,18], cost:[30,70,150], fmt:function(v){ return '+'+v; }, tail:' fuel per answer'},
+  {id:'cash',   name:'Cash Bonus', vals:[10,15,25,40], cost:[35,80,170], fmt:function(v){ return '$'+v; }, tail:' per answer'},
+  {id:'engine', name:'Engine',     vals:[420,500,590,700], cost:[30,65,140], fmt:function(v){ return ''+Math.round(v/4.2); }, tail:' mph top speed'},
+  {id:'star',   name:'Star Value', vals:[1,1.5,2,3], cost:[50,120,240], fmt:function(v){ return '×'+v; }, tail:' star points'}
+];
+var POW=[
+  {id:'nitro',  name:'Nitro',       cost:30, secs:12, d:'Speed boost'},
+  {id:'shield', name:'Shield',      cost:20, secs:20, d:'Crash-proof'},
+  {id:'stars',  name:'Star Shower', cost:30, secs:15, d:'More stars'}
+];
+var GEARF=[1,1.1,1.2,1.3,1.4], GEARN=['1st','2nd','3rd','4th','5th'];
+var S;
+function fresh(){ return { name:'', len:5, started:false, over:false, endAt:0, score:0, fuel:0, dist:0, bonus:0, cash:0, streak:0, best:0, answered:0, correct:0, stars:0, crashes:0,
+  topics:QS?QS.topicTable():{'Vertical shifts':[0,0],'Horizontal shifts':[0,0],'Graphs':[0,0],'New equations':[0,0]}, lv:{fuel:0,cash:0,engine:0,star:0}, buff:{nitro:0,shield:0,stars:0}, q:null, qDone:false, picked:-1 }; }
+function save(){ try{ localStorage.setItem(KEY,JSON.stringify(S)); localStorage.setItem(KEY+'_mute',muted?'1':'0'); }catch(e){} }
+function load(){ try{ var v=JSON.parse(localStorage.getItem(KEY)||'null'); muted=localStorage.getItem(KEY+'_mute')==='1'; if(v&&v.topics&&v.lv&&v.lv.engine!==undefined) return v; }catch(e){} return null; }
+function U(id){ var u=UPG.filter(function(x){ return x.id===id; })[0]; return u.vals[S.lv[id]]; }
+function now(){ return Date.now(); }
+function buffOn(id){ return S.buff[id]>now(); }
+function gear(){ return Math.min(5,1+S.streak); }
+
+/* ================= HUD ================= */
+function hudLive(){ S.score=Math.floor(S.dist)+S.bonus; var a=S.score.toLocaleString(), b=''+Math.ceil(S.fuel), e=$('rc-score'), f=$('rc-fuel');
+  if(e.textContent!==a) e.textContent=a; if(f.textContent!==b) f.textContent=b; $('rc-fuelchip').classList.toggle('empty',S.started&&!S.over&&S.fuel<=0); }
+function hud(){ hudLive(); $('rc-cash').textContent='$'+S.cash; $('rc-streak').textContent=gear();
+  $('rc-shopcash').textContent='$'+S.cash; $('rc-reward').textContent='+'+U('fuel')+' fuel · +$'+(U('cash')+streakBonus(S.streak+1)); if(!$('rc-shop').hidden) drawShop(); }
+function streakBonus(st){ return Math.min(Math.max(st-1,0),5)*2; }
+var saveN=0;
+function timerDraw(){ var left=S.started? Math.max(0,S.endAt-now()) : S.len*60000, s=Math.ceil(left/1000);
+  $('rc-time').textContent=Math.floor(s/60)+':'+('0'+(s%60)).slice(-2); $('rc-timerchip').classList.toggle('low',S.started&&s<=30);
+  var b=''; POW.forEach(function(p){ if(buffOn(p.id)) b+='<span class="rc-buff">'+p.name+' '+Math.ceil((S.buff[p.id]-now())/1000)+'s</span>'; }); $('rc-buffs').innerHTML=b;
+  if(S.started&&!S.over&&(++saveN%4===0)) save();
+  if(S.started&&!S.over&&left<=0) endRun(); }
+
+/* ================= QUESTIONS UI ================= */
+var nextT=0, lockT=0;
+function showQ(){ var q=S.q; $('rc-tag').textContent=q.topic; $('rc-prompt').innerHTML=q.prompt; $('rc-visual').innerHTML=q.visual; $('rc-q').classList.toggle('vis',!!q.visual);
+  $('rc-choices').innerHTML=q.choices.map(function(c,i){ return '<button class="rc-ch" data-i="'+i+'"><span class="k">'+(i+1)+'</span><span class="t">'+c.html+'</span></button>'; }).join('');
+  var fb=$('rc-fb'); fb.className='rc-fb'; fb.innerHTML='Answer correctly to add fuel and earn cash.'; $('rc-next').disabled=true;
+  if(S.qDone) markAnswered(S.picked,false); hud(); }
+function newQ(){ clearTimeout(nextT); S.q=nextQuestion(); S.qDone=false; S.picked=-1; save(); showQ(); }
+function markAnswered(i,fresh){ var q=S.q, btns=$('rc-choices').querySelectorAll('.rc-ch'), c=q.choices[i], fb=$('rc-fb');
+  btns.forEach(function(b,j){ b.disabled=true; if(q.choices[j].ok) b.classList.add('right'); else if(j!==i) b.hidden=true; }); if(!c.ok) btns[i].classList.add('wrong');
+  if(c.ok){ fb.className='rc-fb ok'; fb.innerHTML='<span class="h">Correct!'+(fresh?(gear()===5?' Top gear.':' '+GEARN[gear()-1]+' gear.'):'')+'</span>'+q.explain; $('rc-next').disabled=false; }
+  else { fb.className='rc-fb bad'; fb.innerHTML='<span class="h">Not quite.'+(fresh?' Back to 1st gear.':'')+'</span>'+c.why+'<br>'+q.explain;
+    $('rc-next').disabled=!!fresh; if(fresh){ clearTimeout(lockT); lockT=setTimeout(function(){ $('rc-next').disabled=false; },1800); } } }
+function answer(i){ if(!S.started||S.over||S.qDone||!S.q) return; var c=S.q.choices[i]; if(!c) return; S.qDone=true; S.picked=i; S.answered++; S.topics[S.q.topic][1]++;
+  var btn=$('rc-choices').querySelectorAll('.rc-ch')[i];
+  if(c.ok){ S.correct++; S.topics[S.q.topic][0]++; S.streak++; S.best=Math.max(S.best,S.streak); var pa=U('fuel'), ca=U('cash')+streakBonus(S.streak);
+    S.fuel+=pa; S.cash+=ca; SND.correct(); var p=stagePoint(btn,60,40); confetti(p[0],p[1],45,2.2); toast('+'+pa+' fuel · +$'+ca);
+    markAnswered(i,true); nextT=setTimeout(function(){ if(S.qDone&&!S.over) newQ(); },1600); }
+  else { S.streak=0; S.cash=Math.max(0,S.cash-5); SND.miss(); markAnswered(i,true); }
+  save(); hud(); }
+$('rc-choices').addEventListener('click',function(e){ var b=e.target.closest('.rc-ch'); if(b) answer(+b.dataset.i); });
+$('rc-next').addEventListener('click',function(){ if(S.qDone) newQ(); });
+
+/* ================= SHOP ================= */
+function drawShop(){ $('rc-shopcash').textContent='$'+S.cash;
+  $('rc-upg').innerHTML=UPG.map(function(u){ var l=S.lv[u.id], max=l>=u.cost.length, pr=max?0:u.cost[l];
+    return '<div class="rc-card"><div class="n">'+u.name+'</div><div class="d">'+u.fmt(u.vals[l])+(max?'':' → '+u.fmt(u.vals[l+1]))+u.tail+'</div><div class="rc-pips">'+
+      [0,1,2,3].map(function(k){ return '<span class="'+(k<=l?'on':'')+'"></span>'; }).join('')+'</div><button class="rc-buy" data-u="'+u.id+'"'+(max||S.cash<pr?' disabled':'')+'>'+(max?'Maxed':'Buy $'+pr)+'</button></div>'; }).join('');
+  $('rc-pow').innerHTML=POW.map(function(p){ var on=buffOn(p.id);
+    return '<div class="rc-card"><div class="n">'+p.name+'</div><div class="d">'+p.d+' ('+p.secs+'s)</div><button class="rc-buy" data-p="'+p.id+'"'+(on||S.cash<p.cost?' disabled':'')+'>'+(on?'Active':'Buy $'+p.cost)+'</button></div>'; }).join(''); }
+function openShop(o){ if(!S.started||S.over) return; $('rc-shop').hidden=!o; if(o) drawShop(); }
+$('rc-shopbtn').addEventListener('click',function(){ openShop($('rc-shop').hidden); });
+$('rc-shopx').addEventListener('click',function(){ openShop(false); });
+$('rc-shop').addEventListener('click',function(e){ var b=e.target.closest('.rc-buy'); if(!b||b.disabled) return;
+  if(b.dataset.u){ var u=UPG.filter(function(x){ return x.id===b.dataset.u; })[0], pr=u.cost[S.lv[u.id]]; if(S.cash<pr) return; S.cash-=pr; S.lv[u.id]++; toast(u.name+' upgraded!'); }
+  else { var p=POW.filter(function(x){ return x.id===b.dataset.p; })[0]; if(S.cash<p.cost) return; S.cash-=p.cost; S.buff[p.id]=now()+p.secs*1000; toast(p.name+'!'); timerDraw(); }
+  SND.cash(); save(); hud(); drawShop(); });
+
+/* ================= THE ROAD ================= */
+var cv=$('rc-canvas'), cx=cv.getContext('2d'), W=1054, H=936, RX=227, LW=150, NL=4, PY=H-210, VT=170, DF="'Spitz Digits', 'Racing Sans One', Inter, sans-serif";
+var car, traffic, stars, pops, scroll, relAcc, nextGap, starAcc, nextStar, inv, shake, lastLane, keyGas=false, ptrGas=false;
+var CARCOL=['#3D9BFF','#C77DFF','#4ADE80','#F3F5F9','#FF8A1F','#2DE2E6'];
+function laneX(i){ return RX+LW*i+LW/2; }
+function resetRoad(){ car={lane:1,x:laneX(1),v:0}; traffic=[]; stars=[]; pops=[]; scroll=0; relAcc=0; nextGap=260; starAcc=0; nextStar=300; inv=0; shake=0; lastLane=-1; keyGas=ptrGas=false; }
+function topSpeed(){ return U('engine')*GEARF[gear()-1]*(buffOn('nitro')?1.35:1); }
+function nudge(){ var q=$('rc-q'); q.classList.remove('nudge'); void q.offsetWidth; q.classList.add('nudge'); }
+function pop(x,y,txt,lab,col){ pops.push({x:x,y:y,t0:now(),txt:txt,lab:lab||'',col:col||'#fff'}); }
+function spawnTraffic(ln){ if(ln===undefined){ do{ ln=ri(0,NL-1); }while(ln===lastLane); } lastLane=ln; traffic.push({lane:ln,x:laneX(ln),y:-180,col:pick(CARCOL),out:0,rot:0,passed:false}); }
+function spawnStar(ln,gold){ if(ln===undefined) ln=ri(0,NL-1); stars.push({x:laneX(ln),y:-50,gold:gold===undefined?Math.random()<0.1:gold,got:0}); }
+function crash(o,t){ o.out=(o.x>=car.x?1:-1)*650;
+  if(buffOn('shield')){ pop(car.x,PY-110,'SHIELD!','', '#2DE2E6'); SND.star(); return; }
+  car.v*=0.25; S.fuel=Math.max(0,S.fuel-2); S.crashes++; inv=t+900; shake=t+350; SND.crash(); pop(car.x,PY-110,'CRASH!',MINUS+'2 fuel','#FF7A7A'); hudLive(); }
+function update(dt){ var t=now(); if(!S.started||S.over) return;
+  var gas=(keyGas||ptrGas)&&$('rc-shop').hidden, driving=gas&&S.fuel>0, target=driving?topSpeed():0;
+  if(car.v<target) car.v=Math.min(target,car.v+560*dt); else car.v=Math.max(target,car.v-(driving?300:1000)*dt);
+  if(driving){ S.fuel=Math.max(0,S.fuel-dt); if(S.fuel===0){ SND.empty(); nudge(); } }
+  car.x+=(laneX(car.lane)-car.x)*Math.min(1,dt*14);
+  var dy=car.v*dt, rel=car.v-VT; scroll+=dy; S.dist+=dy/20;
+  if(rel>0){ relAcc+=rel*dt; if(relAcc>=nextGap){ relAcc=0; nextGap=ri(360,620); spawnTraffic(); } }
+  traffic.forEach(function(o){ if(o.out){ o.x+=o.out*dt; o.y+=car.v*0.6*dt; o.rot+=dt*7; return; }
+    if(!o.passed&&o.y>PY+150) o.passed=true;                       // once you are past a car it pulls over, so it can never run into you from behind
+    o.y+=(o.passed?car.v:rel)*dt;
+    if(!o.passed&&t>inv&&Math.abs(o.x-car.x)<76&&Math.abs(o.y-PY)<140) crash(o,t); });
+  traffic=traffic.filter(function(o){ return o.y>-340&&o.y<H+220&&o.x>-140&&o.x<W+140; });
+  starAcc+=dy; if(starAcc>=nextStar){ starAcc=0; nextStar=buffOn('stars')?ri(150,260):ri(480,900); spawnStar(); }
+  stars.forEach(function(s){ s.y+=dy; if(!s.got&&Math.abs(s.x-car.x)<72&&Math.abs(s.y-PY)<92){ s.got=1; var pts=Math.round((s.gold?150:50)*U('star')); S.bonus+=pts; S.stars++;
+      pop(s.x,PY-110,'+'+pts,s.gold?'GOLD!':'','#FFF04D'); if(s.gold){ SND.gold(); var p=stagePoint(cv,s.x,PY-60); confetti(p[0],p[1],40,2.4); } else SND.star(); } });
+  stars=stars.filter(function(s){ return !s.got&&s.y<H+60; });
+  pops=pops.filter(function(p){ return t-p.t0<900; });
+  engine(car.v,car.v>20); hudLive(); }
+function rr(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); }
+function drawCar(x,y,col,player,rot){ cx.save(); cx.translate(x,y); if(rot) cx.rotate(rot);
+  cx.fillStyle='rgba(0,0,0,.35)'; rr(cx,-34,-65,80,146,18); cx.fill();
+  cx.fillStyle='#0b0d12'; [[-47,-52],[33,-52],[-47,24],[33,24]].forEach(function(p){ rr(cx,p[0],p[1],14,34,5); cx.fill(); });
+  cx.fillStyle=col; rr(cx,-40,-73,80,146,18); cx.fill();
+  if(player){ cx.fillStyle='#F3F5F9'; cx.fillRect(-13,-73,9,146); cx.fillRect(4,-73,9,146); }
+  cx.fillStyle='rgba(0,0,0,.3)'; rr(cx,-31,-34,62,78,12); cx.fill();
+  cx.fillStyle='#9FD8FF'; rr(cx,-28,-42,56,22,8); cx.fill(); cx.fillStyle='rgba(159,216,255,.5)'; rr(cx,-26,34,52,13,6); cx.fill();
+  cx.fillStyle='#FFF04D'; cx.fillRect(-34,-73,14,6); cx.fillRect(20,-73,14,6); cx.fillStyle='#FF4B4B'; cx.fillRect(-34,67,14,6); cx.fillRect(20,67,14,6);
+  cx.restore(); }
+function drawStar(x,y,r,col){ cx.save(); cx.translate(x,y); cx.rotate(scroll/260); cx.beginPath(); for(var i=0;i<10;i++){ var a=i*Math.PI/5-Math.PI/2, q=i%2?r*0.45:r; cx.lineTo(Math.cos(a)*q,Math.sin(a)*q); } cx.closePath();
+  cx.fillStyle=col; cx.fill(); cx.lineWidth=4; cx.strokeStyle='rgba(0,0,0,.55)'; cx.stroke(); cx.restore(); }
+function render(){ var t=now(), i, y, live=S.started&&!S.over;
+  cx.save(); if(t<shake) cx.translate((Math.random()-0.5)*14,(Math.random()-0.5)*14);
+  cx.fillStyle='#12251A'; cx.fillRect(-20,-20,W+40,H+40);
+  for(i=0;i<8;i++){ y=((i*163+scroll)%(H+170))-85;                 // roadside trees
+    [[38+(i*71)%120,1],[W-38-(i*53)%120,0]].forEach(function(p){ cx.fillStyle='#0B1A12'; cx.beginPath(); cx.arc(p[0]+6,y+8,44,0,6.28); cx.fill(); cx.fillStyle=p[1]?'#1F5A36':'#246B3E'; cx.beginPath(); cx.arc(p[0],y,42,0,6.28); cx.fill();
+      cx.fillStyle='#2F8650'; cx.beginPath(); cx.arc(p[0]-10,y-10,20,0,6.28); cx.fill(); }); }
+  cx.fillStyle='#2A2D36'; cx.fillRect(RX,-20,LW*NL,H+40);
+  for(y=(scroll%80)-80;y<H+20;y+=80){ cx.fillStyle='#E5333B'; cx.fillRect(RX-16,y,16,40); cx.fillRect(RX+LW*NL,y,16,40); cx.fillStyle='#F3F5F9'; cx.fillRect(RX-16,y+40,16,40); cx.fillRect(RX+LW*NL,y+40,16,40); }
+  cx.fillStyle='rgba(243,245,249,.75)'; for(i=1;i<NL;i++) for(y=(scroll%120)-120;y<H+20;y+=120) cx.fillRect(RX+LW*i-4,y,8,56);
+  stars.forEach(function(s){ drawStar(s.x,s.y,s.gold?40:30,s.gold?'#FFC82E':'#FFF04D'); });
+  traffic.forEach(function(o){ drawCar(o.x,o.y,o.col,false,o.rot); });
+  var driving=live&&(keyGas||ptrGas)&&S.fuel>0&&$('rc-shop').hidden, nit=live&&buffOn('nitro');
+  if(driving){ var fl=28+Math.random()*22+(nit?46:0); [-20,20].forEach(function(dx){ cx.fillStyle=nit?'#2DE2E6':'#FF8A1F'; cx.beginPath(); cx.moveTo(car.x+dx-9,PY+73); cx.lineTo(car.x+dx+9,PY+73); cx.lineTo(car.x+dx,PY+73+fl); cx.closePath(); cx.fill();
+      cx.fillStyle='#FFF04D'; cx.beginPath(); cx.moveTo(car.x+dx-4,PY+73); cx.lineTo(car.x+dx+4,PY+73); cx.lineTo(car.x+dx,PY+73+fl*0.5); cx.closePath(); cx.fill(); }); }
+  if(!(t<inv&&Math.floor(t/90)%2)) drawCar(car.x,PY,'#FF3B30',true,(laneX(car.lane)-car.x)*0.0022);
+  if(live&&buffOn('shield')){ cx.strokeStyle='#2DE2E6'; cx.lineWidth=6; cx.globalAlpha=0.55+0.3*Math.sin(t/120); cx.beginPath(); cx.ellipse(car.x,PY,66,98,0,0,6.28); cx.stroke(); cx.globalAlpha=1; }
+  pops.forEach(function(p){ var k=(t-p.t0)/900; cx.globalAlpha=1-k; cx.textAlign='center'; cx.font='400 50px '+DF; cx.lineWidth=7; cx.strokeStyle='#000';
+    cx.strokeText(p.txt,p.x,p.y-k*60); cx.fillStyle=p.col; cx.fillText(p.txt,p.x,p.y-k*60);
+    if(p.lab){ cx.font='400 32px '+DF; cx.strokeText(p.lab,p.x,p.y-k*60-50); cx.fillStyle='#fff'; cx.fillText(p.lab,p.x,p.y-k*60-50); } cx.globalAlpha=1; });
+  cx.restore();
+  // dash: speed and gear on the left verge, fuel gauge on the right
+  cx.textAlign='center'; cx.fillStyle='rgba(8,9,13,.78)'; rr(cx,14,H-150,184,132,18); cx.fill();
+  cx.fillStyle='#fff'; cx.font='400 58px '+DF; cx.fillText(Math.round(car.v/4.2),106,H-82); cx.font='800 22px Inter, sans-serif'; cx.fillStyle='#9BA5B8'; cx.fillText('MPH',106,H-56);
+  cx.fillStyle='#FF8A1F'; cx.font='400 28px '+DF; cx.fillText(GEARN[gear()-1].toUpperCase()+' GEAR',106,H-26);
+  var cap=30, fh=560, fy=H-60-fh, lvl=Math.min(1,S.fuel/cap); cx.fillStyle='rgba(8,9,13,.78)'; rr(cx,W-92,fy-56,70,fh+74,16); cx.fill();
+  cx.fillStyle='#242936'; cx.fillRect(W-72,fy,30,fh); cx.fillStyle=S.fuel>3?'#2DE2E6':'#FF7A7A'; cx.fillRect(W-72,fy+fh*(1-lvl),30,fh*lvl);
+  cx.fillStyle='#9BA5B8'; cx.font='800 22px Inter, sans-serif'; cx.fillText('FUEL',W-57,fy-22);
+  if(live&&S.fuel<=0){ cx.fillStyle='rgba(8,9,13,.8)'; cx.fillRect(W/2-350,300,700,190); cx.strokeStyle='#FF7A7A'; cx.lineWidth=4; cx.strokeRect(W/2-350,300,700,190);
+    cx.fillStyle='#fff'; cx.font='400 60px '+DF; cx.fillText('OUT OF FUEL',W/2,388); cx.font='700 34px Inter, sans-serif'; cx.fillStyle='#FFD60A'; cx.fillText('Answer a question to refuel  →',W/2,448); }
+  else if(live&&car.v<5&&!(keyGas||ptrGas)&&$('rc-shop').hidden){ cx.fillStyle='rgba(8,9,13,.8)'; cx.fillRect(W/2-350,300,700,170); cx.strokeStyle='#FFD60A'; cx.lineWidth=4; cx.strokeRect(W/2-350,300,700,170);
+    cx.fillStyle='#fff'; cx.font='400 52px '+DF; cx.fillText('HOLD THE ROAD TO DRIVE',W/2,378); cx.font='700 30px Inter, sans-serif'; cx.fillStyle='#FFD60A'; cx.fillText('Slide left or right to change lanes',W/2,432); } }
+var lastF=now(); function loop(){ var t=now(), dt=Math.min(0.05,(t-lastF)/1000); lastF=t; update(dt); render(); requestAnimationFrame(loop); }
+function canvasPt(e){ var r=cv.getBoundingClientRect(); return {x:(e.clientX-r.left)*W/r.width, y:(e.clientY-r.top)*H/r.height}; }
+function steer(e){ var p=canvasPt(e); car.lane=Math.max(0,Math.min(NL-1,Math.floor((p.x-RX)/LW))); }
+function pressGas(){ if(S.started&&!S.over&&S.fuel<=0){ SND.empty(); nudge(); } }
+cv.addEventListener('pointerdown',function(e){ e.preventDefault(); if(!S.started||S.over) return; try{ cv.setPointerCapture(e.pointerId); }catch(x){} steer(e); ptrGas=true; pressGas(); });
+cv.addEventListener('pointermove',function(e){ if(ptrGas) steer(e); });
+['pointerup','pointercancel'].forEach(function(n){ cv.addEventListener(n,function(){ ptrGas=false; }); });
+addEventListener('blur',function(){ keyGas=ptrGas=false; });
+
+/* ================= START / END ================= */
+document.querySelectorAll('.rc-len').forEach(function(b){ b.addEventListener('click',function(){ document.querySelectorAll('.rc-len').forEach(function(x){ x.classList.toggle('on',x===b); }); S.len=+b.dataset.len; timerDraw(); }); });
+$('rc-nameinput').addEventListener('input',function(){ $('rc-go').disabled=!this.value.trim(); });
+$('rc-nameinput').addEventListener('keydown',function(e){ if(e.key==='Enter'&&this.value.trim()) $('rc-go').click(); });
+$('rc-go').addEventListener('click',function(){ var n=$('rc-nameinput').value.trim(); if(!n) return; ac(); S.name=n; S.started=true; S.endAt=now()+S.len*60000; $('rc-start').hidden=true;
+  $('rc-nameinput').blur(); resetRoad(); newQ(); save(); hud(); });
+function endRun(){ S.over=true; engine(0,false); hudLive(); clearTimeout(nextT); openShop(false); $('rc-shop').hidden=true; save(); showEnd(true); }
+function showEnd(celebrate){ if(window.SpitzCode) setTimeout(function(){ window.SpitzCode.show('rc','shift_racer',S); },0); $('rc-endname').textContent=S.name; $('rc-endscore').textContent=S.score.toLocaleString();
+  var acc=S.answered?Math.round(100*S.correct/S.answered):0;
+  $('rc-endstats').innerHTML=[['Correct',S.correct+' of '+S.answered],['Accuracy',acc+'%'],['Best streak',S.best],['Distance',Math.floor(S.dist).toLocaleString()+' m']].map(function(a){ return '<div class="rc-stat"><div class="l">'+a[0]+'</div><div class="v">'+a[1]+'</div></div>'; }).join('');
+  $('rc-endtopics').innerHTML=Object.keys(S.topics).map(function(k){ var t=S.topics[k]; return '<div class="rc-stat"><div class="l">'+k+'</div><div class="v">'+t[0]+' / '+t[1]+'</div></div>'; }).join('');
+  $('rc-end').hidden=false; if(celebrate){ SND.win(); [0,350,700,1100].forEach(function(ms,i){ setTimeout(function(){ confetti(200+i*500,1070,90,1.3); confetti(1720-i*500,1070,90,1.3); },ms); }); } }
+var armT=0; $('rc-again').addEventListener('click',function(){ var b=this; if(!b.classList.contains('arm')){ b.classList.add('arm'); b.textContent='Tap again to start over'; clearTimeout(armT); armT=setTimeout(function(){ b.classList.remove('arm'); b.textContent='Play again'; },3000); return; }
+  b.classList.remove('arm'); b.textContent='Play again'; var keepName=S.name, keepLen=5; S=fresh(); S.name=keepName; S.len=keepLen; resetRoad();
+  $('rc-end').hidden=true; $('rc-start').hidden=false; $('rc-nameinput').value=keepName; $('rc-go').disabled=!keepName;
+  document.querySelectorAll('.rc-len').forEach(function(x){ x.classList.toggle('on',+x.dataset.len===keepLen); }); save(); hud(); timerDraw();
+  $('rc-choices').innerHTML=''; $('rc-prompt').innerHTML=''; $('rc-visual').innerHTML=''; });
+
+/* ================= KEYS ================= */
+function fullscreen(){ var d=document, e=d.documentElement; if(d.fullscreenElement||d.webkitFullscreenElement) (d.exitFullscreen||d.webkitExitFullscreen).call(d);
+  else { var r=e.requestFullscreen||e.webkitRequestFullscreen; if(r){ var p=r.call(e); if(p&&p.catch) p.catch(function(){}); } } }
+function isGas(e){ return e.key==='ArrowUp'||e.key===' '; }
+document.addEventListener('keydown',function(e){ if(e.metaKey||e.ctrlKey||e.altKey) return; if(e.target&&e.target.tagName==='INPUT') return;
+  if(!$('sz-ask').hidden){ e.preventDefault(); if(k0(e)==='y') newRun(); else if(k0(e)==='n'||e.key==='Escape') askNew(false); return; }
+  if(k0(e)==='r'&&e.shiftKey){ e.preventDefault(); if(S.started) askNew(true); return; } var k=e.key.toLowerCase();
+  if(k==='f'){ e.preventDefault(); fullscreen(); return; }
+  if(k==='n'){ e.preventDefault(); musicToggle(); return; }
+  if(k==='m'){ e.preventDefault(); muted=!muted; save(); toast(muted?'Sound off':'Sound on'); if(!muted) SND.tick(); return; }
+  if(e.key==='Escape'){ openShop(false); return; }
+  if(k==='s'){ e.preventDefault(); openShop($('rc-shop').hidden); return; }
+  if(isGas(e)){ e.preventDefault(); if(!e.repeat){ keyGas=true; pressGas(); } return; }
+  if(e.key==='ArrowLeft'||e.key==='ArrowRight'){ e.preventDefault(); if(S.started&&!S.over) car.lane=Math.max(0,Math.min(NL-1,car.lane+(e.key==='ArrowLeft'?-1:1))); return; }
+  if(/^[1-4]$/.test(e.key)){ answer(+e.key-1); return; }
+  if(e.key==='Enter'&&S.qDone&&!$('rc-next').disabled){ e.preventDefault(); newQ(); } });
+document.addEventListener('keyup',function(e){ if(isGas(e)) keyGas=false; });
+function fit(){ var s=Math.min(innerWidth/1920,innerHeight/1080), y=$('stage').style; y.transform='scale('+s+')'; y.left=((innerWidth-1920*s)/2)+'px'; y.top=((innerHeight-1080*s)/2)+'px'; }
+addEventListener('resize',fit);
+
+function k0(e){ return (e.key||'').toLowerCase(); }
+function askNew(o){ $('sz-ask').hidden=!o; }
+function newRun(){ var n=S.name; S=fresh(); S.name=n; try{ localStorage.setItem(KEY,JSON.stringify(S)); }catch(e){} location.reload(); }   // S is replaced first, so a save that fires before the reload writes the fresh run
+$('sz-askyes').addEventListener('click',newRun); $('sz-askno').addEventListener('click',function(){ askNew(false); });
+document.querySelector('.rc-top .rc-logo').addEventListener('click',function(){ if(S.started) askNew(true); });
+$('sz-mus').addEventListener('click',function(e){ e.stopPropagation(); ac(); musicToggle(); }); musBtn();
+$('rc-go').addEventListener('click',function(){ if(S.started) jingle(); });
+
+/* ================= BOOT ================= */
+S=load()||fresh(); fit(); resetRoad();
+if(S.started){ $('rc-start').hidden=true; if(S.over||S.endAt<=now()){ S.over=true; showEnd(false); } else if(S.q){ showQ(); } else newQ(); }
+else { $('rc-nameinput').value=S.name||''; $('rc-go').disabled=!S.name; }
+hud(); timerDraw(); setInterval(timerDraw,250); requestAnimationFrame(loop);
+
+/* test hooks */
+window.__G={ state:function(){ return S; }, car:function(){ return car; }, traffic:function(){ return traffic; }, stars:function(){ return stars; }, gas:function(b){ keyGas=!!b; }, spawnTraffic:spawnTraffic, spawnStar:spawnStar,
+  build:build, show:function(type){ S.q=build(type); S.qDone=false; S.picked=-1; showQ(); }, end:function(){ S.endAt=now()-1; timerDraw(); }, types:Object.keys(GEN) };
+})();
+</script>
+<script>/* the start screen names the question set the hub link picked */
+(function(){ var m=/[?&]set=([a-z]+)/.exec(location.search); if(m&&window.SpitzQ&&SpitzQ.sets&&SpitzQ.sets[m[1]]) document.querySelectorAll('.sz-setname').forEach(function(e){ e.textContent=SpitzQ.sets[m[1]].name+'.'; }); })();</script>
+<!-- ================= FULL SCREEN REMINDER: shows until the game is full screen; click it or press F ================= -->
+<style>
+.sz-fs{ position:fixed; left:50%; bottom:16px; transform:translateX(-50%); transform-origin:50% 100%; z-index:9999; display:flex; white-space:nowrap; align-items:center; gap:10px; padding:10px 20px 10px 12px; border-radius:999px;
+  border:2px solid rgba(255,255,255,.4); background:rgba(0,0,0,.78); color:#fff; font:700 18px/1 Inter,system-ui,sans-serif; cursor:pointer; box-shadow:0 8px 24px rgba(0,0,0,.4); transition:opacity .4s; }
+.sz-fs kbd{ display:inline-grid; place-items:center; min-width:34px; height:34px; border-radius:8px; background:#fff; color:#111; font:800 20px/1 Inter,system-ui,sans-serif; }
+.sz-fs.quiet{ opacity:.4; } .sz-fs:hover{ opacity:1; }
+.sz-fs[hidden]{ display:none; }
+</style>
+<button class="sz-fs" id="sz-fs" hidden aria-label="Full screen, key F"><kbd>F</kbd>Press F for full screen</button>
+<script>
+(function(){ var b=document.getElementById('sz-fs'), t0=Date.now();
+  function fs(){ return !!(document.fullscreenElement||document.webkitFullscreenElement); }
+  function upd(){ b.hidden=fs(); var st=document.querySelector('[id$="-start"]'), onStart=!!(st&&!st.hidden&&st.offsetParent);
+    b.classList.toggle('quiet', !onStart && Date.now()-t0>8000);
+    /* sit at the same spot of the game screen at any window size: scale with the stage and follow its letterbox (a game can move it sideways with --sz-fs-x).
+       On the start and end screens it waits in the top right corner, so it never covers the keys line or the buttons (a game can opt out with --sz-fs-corner:0) */
+    var sg=document.getElementById('stage'); if(sg){ var r=sg.getBoundingClientRect(), k=r.width/1920; if(k>0){ var cs=getComputedStyle(document.documentElement),
+        x=parseFloat(cs.getPropertyValue('--sz-fs-x'))||0.5, en=document.querySelector('[id$="-end"]'), over=onStart||!!(en&&!en.hidden&&en.offsetParent);
+      if(over&&cs.getPropertyValue('--sz-fs-corner').trim()!=='0'){ b.style.top=(r.top+24*k)+'px'; b.style.bottom='auto'; b.style.left=(r.right-24*k)+'px'; b.style.transformOrigin='100% 0'; b.style.transform='translateX(-100%) scale('+k+')'; }
+      else{ b.style.top=''; b.style.transformOrigin=''; b.style.left=(r.left+r.width*x)+'px'; b.style.bottom=(window.innerHeight-r.bottom+16*k)+'px'; b.style.transform='translateX(-50%) scale('+k+')'; } } } }
+  b.addEventListener('click',function(){ document.dispatchEvent(new KeyboardEvent('keydown',{key:'f',bubbles:true})); setTimeout(upd,300); });
+  ['click','keydown'].forEach(function(n){ document.addEventListener(n,function(){ setTimeout(upd,60); },true); });   // follow Start / Play again right away
+  window.addEventListener('resize',function(){ setTimeout(upd,50); }); document.addEventListener('fullscreenchange',upd); document.addEventListener('webkitfullscreenchange',upd); setInterval(upd,1000); upd(); })();
+</script>
+</body>
+</html>
