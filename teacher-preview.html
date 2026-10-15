@@ -15,7 +15,7 @@ ul{margin:6px 0 0;padding-left:18px} li.ok{color:#7CE04A;font-weight:700} li sma
 <h1>Question preview</h1><p class="s">Teacher page. Every click makes new questions, with answers and the feedback students see.</p>
 <select id="set"></select> <button id="go">New questions</button>
 <div class="g" id="g"></div>
-<script src="games/questions.js"></script><script>
+<script src="questions.js"></script><script>
 var S=SpitzQ.sets, sel=document.getElementById('set');
 sel.innerHTML=Object.keys(S).map(function(id){ return '<option value="'+id+'">'+S[id].name+' (TEKS '+S[id].teks+')</option>'; }).join('');
 function draw(){ var id=sel.value, Q=S[id].make('pv'), h='';

@@ -125,8 +125,8 @@ a.play[aria-disabled="true"]{ opacity:.4; pointer-events:none; }
   </div>
 </div>
 
-<script src="games/catalog.js"></script>
-<script src="games/questions.js"></script>
+<script src="catalog.js"></script>
+<script src="questions.js"></script>
 <script>
 var GAMES=window.SpitzGames;
 /* the question sets come straight from games/questions.js, so the hub always matches what the games ask */
@@ -149,7 +149,7 @@ function render(){
   document.querySelectorAll('.chip input').forEach(function(c){ c.checked=st.t[c.dataset.s].indexOf(c.value)>=0; });
   var s=SETS.filter(function(x){ return x.id===st.set; })[0], ts=st.t[st.set], ok=g&&ts.length, p=$('play');
   p.setAttribute('aria-disabled',ok?'false':'true');
-  p.href=ok?'games/'+g.id+'.html?set='+st.set+'&topics='+ts.join(','):'#';
+  p.href=ok?g.id+'.html?set='+st.set+'&topics='+ts.join(','):'#';
   $('sumtxt').textContent=!g?'Pick a game':!ts.length?'Pick at least one topic':g.name+' · '+s.name+(ts.length<s.topics.length?' ('+ts.length+' of '+s.topics.length+' topics)':'');
 }
 $('games').addEventListener('click',function(e){ var b=e.target.closest('.game'); if(!b) return; st.game=b.dataset.g; save(); render(); });
