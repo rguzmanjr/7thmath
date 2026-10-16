@@ -1,26 +1,304 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Numlings: teacher dashboard</title>
-<meta name="robots" content="noindex">
+<title>Math 7 Arcade Scores</title>
+<meta name="robots" content="noindex,nofollow">
+<link rel="icon" href="trophy.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;600;700&family=Sniglet:wght@400;800&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
-<link rel="stylesheet" href="css/teacher.css">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Lexend:wght@400;600;800&family=JetBrains+Mono:wght@500;700&display=swap">
+<style>
+/* Layout: teacher console. Paste responses -> tabs per game -> ranked board (hide names, show full screen) -> post the top 10s to the student leaderboard. Not linked from the student pages. */
+:root{
+  --paper:#0E1016; --panel:#191C25; --panel2:#222634; --line:#2E3344;
+  --ink:#F3F5FA; --muted:#9AA3B8; --brand:#FFB020; --ok:#7CE04A; --no:#FF7A7A;
+  --gold:#FFD23F; --silver:#C9D1E0; --bronze:#E89A5B;
+  --display:'Bungee','Arial Black',system-ui,sans-serif;
+  --body:'Lexend',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+  color-scheme:dark;
+}
+*{ box-sizing:border-box; }
+[hidden]{ display:none !important; }
+html,body{ background:var(--paper); color:var(--ink); margin:0; }
+body{ font:400 16px/1.5 var(--body); padding-inline:16px; padding-block:0 64px; }
+.wrap{ max-width:1180px; margin:0 auto; display:flex; flex-direction:column; gap:28px; }
+header{ display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:12px; padding-top:28px; }
+.tag{ font:600 14px/1 var(--body); color:var(--muted); letter-spacing:.14em; text-transform:uppercase; }
+h1{ font:400 clamp(30px,5.4vw,52px)/1 var(--display); margin:6px 0 0; }
+h1 span{ color:var(--brand); }
+header a{ color:var(--muted); font-weight:600; }
+h2{ font:400 20px/1.1 var(--display); margin:0 0 12px; }
+.card{ background:var(--panel); border:1px solid var(--line); border-radius:16px; padding:18px; }
+.cols{ display:grid; grid-template-columns:minmax(0,2fr) minmax(0,1fr); gap:16px; }
+@media (max-width:820px){ .cols{ grid-template-columns:1fr; } }
+label.h{ display:block; font-weight:800; margin-bottom:6px; }
+.hint{ color:var(--muted); font-size:14px; margin:0 0 10px; }
+textarea,input[type=text],input[type=password]{ width:100%; background:var(--paper); color:var(--ink); border:2px solid var(--line); border-radius:12px; padding:12px; font:500 14px/1.45 var(--mono); }
+textarea{ min-height:150px; resize:vertical; }
+textarea:focus,input:focus{ outline:none; border-color:var(--brand); }
+.row{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:10px; }
+button{ font:800 15px/1 var(--body); border-radius:12px; padding:12px 16px; cursor:pointer; border:2px solid var(--line); background:var(--panel2); color:var(--ink); }
+button.primary{ background:var(--brand); color:var(--paper); border-color:var(--brand); }
+button:focus-visible{ outline:3px solid var(--ink); outline-offset:2px; }
+.check{ margin-top:12px; padding:12px; border-radius:12px; background:var(--paper); font-size:15px; min-height:48px; }
+.check.good{ border:2px solid var(--ok); } .check.bad{ border:2px solid var(--no); }
+.check b{ font-family:var(--display); font-weight:400; }
+.tabs{ display:flex; flex-wrap:wrap; gap:8px; }
+.tabs button{ border-radius:99px; padding:10px 14px; }
+.tabs button[aria-pressed="true"]{ background:var(--ink); color:var(--paper); border-color:var(--ink); }
+.tabs button .c{ opacity:.6; font-weight:600; margin-left:4px; }
+.filters{ display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin:14px 0 4px; }
+select{ background:var(--paper); color:var(--ink); border:2px solid var(--line); border-radius:12px; padding:10px 12px; font:600 15px var(--body); }
+.board{ margin-top:14px; display:flex; flex-direction:column; gap:8px; }
+.lb{ display:grid; grid-template-columns:56px minmax(0,1fr) auto auto; gap:14px; align-items:center; background:var(--panel2); border-radius:14px; padding:12px 16px; border:2px solid transparent; }
+.lb .rk{ font:400 26px/1 var(--display); color:var(--muted); text-align:center; }
+.lb .nm{ font-weight:800; font-size:19px; min-width:0; overflow-wrap:anywhere; }
+.lb .meta{ display:block; font-weight:400; font-size:13px; color:var(--muted); }
+.lb .sc{ font:400 28px/1 var(--display); font-variant-numeric:tabular-nums; text-align:right; }
+.lb .ac{ font:700 15px/1 var(--mono); color:var(--muted); min-width:52px; text-align:right; }
+.lb.g1{ border-color:var(--gold); } .lb.g1 .rk{ color:var(--gold); }
+.lb.g2{ border-color:var(--silver); } .lb.g2 .rk{ color:var(--silver); }
+.lb.g3{ border-color:var(--bronze); } .lb.g3 .rk{ color:var(--bronze); }
+@media (max-width:560px){ .lb{ grid-template-columns:40px minmax(0,1fr) auto; } .lb .ac{ display:none; } .lb .sc{ font-size:22px; } }
+.empty{ color:var(--muted); padding:22px; text-align:center; border:2px dashed var(--line); border-radius:14px; }
+.problems{ margin-top:14px; font-size:14px; color:var(--muted); }
+.problems summary{ cursor:pointer; color:var(--no); font-weight:800; }
+.problems li{ margin:4px 0; overflow-wrap:anywhere; }
+.big{ position:fixed; inset:0; background:var(--paper); z-index:10; padding:3vh 4vw; overflow:auto; display:flex; flex-direction:column; gap:2vh; }
+.big .top{ display:flex; justify-content:space-between; align-items:flex-end; gap:16px; flex-wrap:wrap; }
+.big h3{ font:400 clamp(28px,4.4vw,64px)/1 var(--display); margin:0; }
+.big h3 span{ color:var(--brand); }
+.big .sub{ color:var(--muted); font-size:clamp(16px,1.6vw,24px); }
+.big .lb{ padding:1.4vh 2vw; } .big .lb .nm{ font-size:clamp(18px,2.2vw,34px); } .big .lb .sc{ font-size:clamp(22px,2.8vw,44px); } .big .lb .rk{ font-size:clamp(22px,2.6vw,40px); }
+.big .lb .ac{ font-size:clamp(14px,1.4vw,22px); }
+.big .board{ display:grid; grid-template-columns:repeat(var(--cols,1),minmax(0,1fr)); gap:1.2vh 2vw; }
+@media (prefers-reduced-motion:no-preference){ .big .lb{ animation:rise .5s both; } @keyframes rise{ from{ opacity:0; transform:translateY(14px); } } }
+.lb.t{ grid-template-columns:56px minmax(0,1fr) auto auto auto; }
+.lb .hide{ padding:8px 12px; font-size:13px; }
+@media (max-width:560px){ .lb.t{ grid-template-columns:40px minmax(0,1fr) auto auto; } }
+.hidden-names{ margin-top:12px; display:flex; flex-wrap:wrap; gap:8px; align-items:center; font-size:14px; color:var(--muted); }
+.hidden-names button{ padding:6px 10px; font-size:13px; border-radius:99px; }
+.hidden-names button s{ color:var(--ink); }
+.post{ display:grid; grid-template-columns:minmax(0,3fr) minmax(0,2fr); gap:18px; }
+@media (max-width:820px){ .post{ grid-template-columns:1fr; } }
+.post ol{ margin:0; padding-left:20px; font-size:14px; color:var(--muted); }
+.post ol li{ margin:4px 0; } .post ol b{ color:var(--ink); }
+.post a{ color:var(--brand); }
+.status{ margin-top:10px; font-size:15px; min-height:24px; }
+.status.good{ color:var(--ok); } .status.bad{ color:var(--no); }
+.tokrow{ display:flex; gap:8px; } .tokrow input{ flex:1; }
+.saved{ font-size:14px; color:var(--ok); }
+</style>
 </head>
-<body class="teacher">
-<header class="t-head"><h1>Numlings <span>Teacher dashboard</span></h1>
-  <p class="muted">See which TEKS skills your students have mastered, who needs help, and who to group for reteaching.</p></header>
-<main id="t-app"></main>
+<body>
+<div class="wrap">
+  <header>
+    <div><div class="tag">Teacher page · Games by Mr. Spitz 🍔</div><h1>Math 7 <span>Scores</span></h1></div>
+    <a href="leaderboard.html" target="_blank" rel="noopener">Open the student leaderboard</a>
+  </header>
+
+  <div class="cols">
+    <section class="card">
+      <h2>Score submissions</h2>
+      <label class="h" for="paste">Paste your Google Form responses</label>
+      <p class="hint">Open the form's response sheet, select the rows (or the whole sheet), copy, and paste here. Each row needs the student's name and their score code.</p>
+      <textarea id="paste" spellcheck="false" placeholder="10/10/2026 9:14:02	Jake S.	RJKC-9SWH-EEB5-4T8Z"></textarea>
+      <div class="row"><button class="primary" id="go">Check codes</button><button id="clear">Clear</button><span class="hint" id="count" style="margin:0"></span></div>
+    </section>
+    <section class="card">
+      <h2>Check one code</h2>
+      <p class="hint">For a student showing you their screen.</p>
+      <label class="h" for="one-name">Name</label><input type="text" id="one-name" autocomplete="off" placeholder="Jake S.">
+      <label class="h" for="one-code" style="margin-top:10px">Score code</label><input type="text" id="one-code" autocomplete="off" placeholder="XXXX-XXXX-XXXX-XXXX">
+      <div class="check" id="one-out" aria-live="polite">Type a name and code.</div>
+    </section>
+  </div>
+
+  <section class="card" id="boards">
+    <h2>Leaderboards</h2>
+    <div class="tabs" id="tabs"></div>
+    <div class="filters">
+      <select id="f-set" aria-label="Question set"></select>
+      <select id="f-when" aria-label="When">
+        <option value="today">Today</option><option value="week">This week</option><option value="all" selected>All time</option>
+      </select>
+      <button id="show">Show on the board</button>
+    </div>
+    <div class="board" id="board"></div>
+    <div class="hidden-names" id="hidden" hidden></div>
+    <details class="problems" id="problems" hidden><summary></summary><ul id="plist"></ul></details>
+  </section>
+
+  <section class="card post">
+    <div>
+      <h2>Post to the student leaderboard</h2>
+      <p class="hint">Posts the top 10 for every game (all time, every question set, one spot per student) to the leaderboard students open from the hub. Hidden names stay off. Students see names, scores, accuracy and the question set, never the codes. The site takes a minute or two to show the new board.</p>
+      <div class="row" style="margin-top:0"><button class="primary" id="publish">Post to the site</button><button id="download">Download file instead</button></div>
+      <div class="status" id="pub-status" aria-live="polite"></div>
+    </div>
+    <div>
+      <label class="h" for="token">GitHub key</label>
+      <div class="tokrow"><input type="password" id="token" autocomplete="off" spellcheck="false" placeholder="github_pat_…"><button id="tok-save">Save</button></div>
+      <p class="hint" style="margin-top:8px" id="tok-state"></p>
+      <details><summary class="hint" style="cursor:pointer;margin:0">How to get the key (one time)</summary>
+        <ol>
+          <li>Open <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub's new fine-grained token page</a>.</li>
+          <li>Name it <b>Arcade leaderboard</b>, set <b>Resource owner</b> to your GitHub account (<b id="gh-owner">yours</b>), and pick an expiration (up to a year).</li>
+          <li>Under <b>Repository access</b>, choose <b>Only select repositories</b> and pick the site’s repository (<b id="gh-repo">the one this page lives in</b>).</li>
+          <li>Under <b>Permissions</b>, set <b>Contents</b> to <b>Read and write</b>.</li>
+          <li>Click <b>Generate token</b>, copy it, paste it above and click Save.</li>
+        </ol>
+        <p class="hint" style="margin-top:8px">The key stays in this browser only. It can change files in the site’s repository and nothing else. Without it, use Download file instead and upload the file to the repo's data folder on github.com.</p>
+      </details>
+    </div>
+  </section>
+</div>
+
+<div class="big" id="big" hidden>
+  <div class="top"><div><h3 id="big-title"></h3><div class="sub" id="big-sub"></div></div><button id="big-x">Close</button></div>
+  <div class="board" id="big-board"></div>
+</div>
+
+<script src="scorecode.js"></script>
 <script>
-/* Keep VERSION in step with index.html so browsers load fresh files after an update. */
-const VERSION = 6;
-const FILES = ['js/config.js', 'js/util.js', 'js/i18n.js', 'data/zones.js', 'data/species.js', 'data/questions.js', 'js/state.js', 'data/maps.js', 'data/quests.js', 'js/teacher.js'];
-for (const f of FILES) { const s = document.createElement('script'); s.src = f + '?v=' + VERSION; s.async = false; document.body.appendChild(s); }
-for (const l of document.querySelectorAll('link[href^="css/"]')) l.href = l.getAttribute('href') + '?v=' + VERSION;
+(function(){
+var $=function(i){ return document.getElementById(i); }, C=window.SpitzCode;
+var KEY='math7_leaderboard_v1', HKEY='math7_hidden_v1', TKEY='math7_gh_key', entries=[], problems=[], st={game:null,set:'*',when:'all'}, hidden={};
+try{ hidden=JSON.parse(localStorage.getItem(HKEY)||'{}')||{}; }catch(e){}
+function saveHidden(){ try{ localStorage.setItem(HKEY,JSON.stringify(hidden)); }catch(e){} }
+
+/* Splat Range / Star Swarm codes from before October 2026 (SR-xxxx-xxxx-xxxx / SW-...): score, correct, answered only */
+var OALPH='ABCDEFGHJKLMNPQRSTUVWXYZ23456789', OMASK=BigInt('0x5A3C96E1F0B7D2C');
+function oh16(s){ var h=2166136261; for(var i=0;i<s.length;i++){ h^=s.charCodeAt(i); h=Math.imul(h,16777619)>>>0; } return (h^(h>>>16))&0xFFFF; }
+function readOld(code){ var c=String(code).toUpperCase().replace(/[^A-Z0-9]/g,''), pre=c.slice(0,2), id=pre==='SR'?'splat_range':pre==='SW'?'star_swarm':null; if(!id||c.length!==14) return null; c=c.slice(2);
+  var full=0n; for(var i=0;i<12;i++){ var v=OALPH.indexOf(c[i]); if(v<0) return null; full=(full<<5n)|BigInt(v); } full^=OMASK;
+  var p=full>>16n; if(oh16('spitz'+p.toString()+'burger')!==Number(full&0xFFFFn)) return null;
+  var r={ score:Number(p>>24n), correct:Number((p>>16n)&255n), answered:Number((p>>8n)&255n) }; if(r.correct>r.answered) return null;
+  return { code:'SR'===pre?'SR-'+c.slice(0,4)+'-'+c.slice(4,8)+'-'+c.slice(8):'SW-'+c.slice(0,4)+'-'+c.slice(4,8)+'-'+c.slice(8), game:id, gameName:C.GAMES[id][1], kind:'points', set:'', setName:'Game’s own questions', topics:[], len:0,
+    score:r.score, display:r.score.toLocaleString(), correct:r.correct, answered:r.answered, date:null, old:true }; }
+
+var NEW=/\b[A-HJ-NP-Z2-9]{4}[\s-]?[A-HJ-NP-Z2-9]{4}[\s-]?[A-HJ-NP-Z2-9]{4}[\s-]?[A-HJ-NP-Z2-9]{4}\b/i, OLD=/\bS[RW][\s-]*[A-Z0-9]{4}[\s-]*[A-Z0-9]{4}[\s-]*[A-Z0-9]{4}\b/i;
+function esc(t){ return String(t).replace(/[&<>"]/g,function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function isStamp(f){ return /\d{1,4}[\/\-.]\d{1,2}[\/\-.]\d{1,4}/.test(f)||/^\d{1,2}:\d{2}/.test(f); }
+function stampDate(fields){ for(var i=0;i<fields.length;i++){ var m=fields[i].match(/(\d{1,2})\/(\d{1,2})\/(\d{4})/); if(m) return new Date(Date.UTC(+m[3],+m[1]-1,+m[2])); } return null; }
+
+function parse(text){ entries=[]; problems=[]; var seen={};
+  text.split(/\r?\n/).forEach(function(line){ if(!line.trim()) return;
+    var m=line.match(OLD)||line.match(NEW), fields=line.split(/\t|,(?=(?:[^"]*"[^"]*")*[^"]*$)/).map(function(f){ return f.replace(/^"|"$/g,'').trim(); });
+    var rest=m?line.replace(m[0],' '):line, name='';
+    rest.split(/\t|,/).some(function(f){ f=f.replace(/^"|"$/g,'').trim(); if(!f||isStamp(f)||!/[a-z]/i.test(f)||/^(name|score code|code|timestamp)$/i.test(f)||f.indexOf('@')>=0) return false; name=f; return true; });
+    if(!m){ if(name&&!/^(timestamp|name)/i.test(line.trim())) problems.push(esc(name)+': no score code in this row'); return; }
+    if(!name){ problems.push(esc(m[0])+': no name in this row'); return; }
+    var r=OLD.test(m[0])?readOld(m[0]):C.read(m[0],name);
+    if(!r){ problems.push('<b>'+esc(name)+'</b>: '+esc(m[0].toUpperCase())+' doesn’t check out for this name (mistyped, or someone else’s code)'); return; }
+    var k=r.code; if(seen[k]){ if(seen[k]!==C.normName(name)) problems.push('<b>'+esc(name)+'</b>: same code as '+esc(seen[k])); return; } seen[k]=C.normName(name);
+    r.name=name; r.who=C.normName(name); if(!r.date) r.date=stampDate(fields); entries.push(r); });
+  var ids=Object.keys(C.GAMES).filter(function(id){ return entries.some(function(e){ return e.game===id; }); });
+  if(ids.indexOf(st.game)<0) st.game=ids[0]||null;
+  $('count').textContent=entries.length?entries.length+' score'+(entries.length===1?'':'s')+' checked out':'';
+  render(); }
+
+function dayNum(d){ return d?Math.floor(d.getTime()/864e5):null; }
+function inWhen(e,when){ when=when||st.when; if(when==='all') return true; if(!e.date) return false; var n=new Date(), t=Math.floor(Date.UTC(n.getFullYear(),n.getMonth(),n.getDate())/864e5), d=dayNum(e.date);
+  if(when==='today') return d===t; var dow=(n.getDay()+6)%7; return d>=t-dow&&d<=t; }
+function setKey(e){ return e.set+'|'+(e.allTopics===false?e.topics.join('+'):''); }
+function setLabel(e){ return e.setName+(e.allTopics===false?' · '+e.topics.join(', '):''); }
+function better(a,b){ if(a.kind==='strokes') return a.score<b.score||(a.score===b.score&&a.correct>b.correct);
+  if(a.kind==='versus') return a.score>b.score||(a.score===b.score&&a.buds>b.buds);
+  return a.score>b.score||(a.score===b.score&&a.correct/(a.answered||1)>b.correct/(b.answered||1)); }
+function rankFor(game,set,when){ var best={}; entries.forEach(function(e){ if(e.game!==game||hidden[e.who]||!inWhen(e,when)) return; if(set!=='*'&&setKey(e)!==set) return;
+    var k=e.who; if(!best[k]||better(e,best[k])) best[k]=e; });
+  return Object.keys(best).map(function(k){ return best[k]; }).sort(function(a,b){ return better(a,b)?-1:better(b,a)?1:0; }); }
+function ranked(){ return rankFor(st.game,st.set,st.when); }
+function fmtDate(d){ return d?d.toLocaleDateString(undefined,{month:'short',day:'numeric',timeZone:'UTC'}):''; }
+function rowHtml(e,i,meta,hideBtn){ var acc=e.answered?Math.round(100*e.correct/e.answered)+'%':'';
+  return '<div class="lb'+(hideBtn?' t':'')+(i<3?' g'+(i+1):'')+'" style="animation-delay:'+(i*60)+'ms"><span class="rk">'+(i+1)+'</span><span class="nm">'+esc(e.name)+(meta?'<span class="meta">'+esc(meta(e))+'</span>':'')+'</span><span class="sc">'+esc(e.display)+'</span><span class="ac" title="Accuracy">'+acc+'</span>'+
+    (hideBtn?'<button class="hide" data-hide="'+esc(e.who)+'" data-name="'+esc(e.name)+'" title="Keep this name off every board">Hide name</button>':'')+'</div>'; }
+
+function render(){
+  var counts={}; entries.forEach(function(e){ counts[e.game]=(counts[e.game]||0)+1; });
+  $('tabs').innerHTML=Object.keys(C.GAMES).filter(function(id){ return counts[id]; }).map(function(id){ return '<button data-g="'+id+'" aria-pressed="'+(id===st.game)+'">'+C.GAMES[id][1]+'<span class="c">'+counts[id]+'</span></button>'; }).join('');
+  var sets={}; entries.forEach(function(e){ if(e.game===st.game) sets[setKey(e)]=setLabel(e); });
+  if(st.set!=='*'&&!sets[st.set]) st.set='*';
+  $('f-set').innerHTML='<option value="*">All question sets</option>'+Object.keys(sets).map(function(k){ return '<option value="'+esc(k)+'"'+(k===st.set?' selected':'')+'>'+esc(sets[k])+'</option>'; }).join('');
+  $('f-when').value=st.when;
+  var rows=ranked();
+  $('board').innerHTML=!entries.length?'<div class="empty">Paste the form responses above to see the leaderboards.</div>':
+    rows.length?rows.slice(0,50).map(function(e,i){ return rowHtml(e,i,function(e){ return [st.set==='*'?setLabel(e):'',e.len?e.len+' min':'',fmtDate(e.date)].filter(Boolean).join(' · '); },true); }).join(''):'<div class="empty">No scores for this game with these filters.</div>';
+  $('show').disabled=!rows.length;
+  var hk=Object.keys(hidden); $('hidden').hidden=!hk.length;
+  $('hidden').innerHTML='Hidden names:'+hk.map(function(k){ return '<button data-unhide="'+esc(k)+'" title="Show this name again"><s>'+esc(hidden[k])+'</s> · Show</button>'; }).join('');
+  $('problems').hidden=!problems.length; $('problems').querySelector('summary').textContent=problems.length+' row'+(problems.length===1?'':'s')+' to check';
+  $('plist').innerHTML=problems.map(function(p){ return '<li>'+p+'</li>'; }).join('');
+}
+
+function showBig(){ var rows=ranked().slice(0,20), n=rows.length; if(!n) return;
+  $('big-title').innerHTML=esc(C.GAMES[st.game][1])+' <span>Leaders</span>';
+  $('big-sub').textContent=[st.set==='*'?'All question sets':$('f-set').selectedOptions[0].textContent,{today:'Today',week:'This week',all:'All time'}[st.when]].join(' · ');
+  var cols=n>10?2:1; $('big-board').style.setProperty('--cols',cols); $('big-board').style.gridTemplateRows=cols>1?'repeat('+Math.ceil(n/2)+',auto)':''; $('big-board').style.gridAutoFlow=cols>1?'column':'';
+  $('big-board').innerHTML=rows.map(function(e,i){ return rowHtml(e,i,null); }).join('');
+  $('big').hidden=false; try{ document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen().catch(function(){}); }catch(e){} }
+function closeBig(){ $('big').hidden=true; try{ if(document.fullscreenElement) document.exitFullscreen(); }catch(e){} }
+
+function checkOne(){ var n=$('one-name').value.trim(), c=$('one-code').value.trim(), o=$('one-out');
+  if(!n||!c){ o.className='check'; o.textContent='Type a name and code.'; return; }
+  var r=OLD.test(c)?readOld(c):C.read(c,n);
+  if(!r){ o.className='check bad'; o.textContent='This code doesn’t check out for '+n+'. Check the spelling of the name and the code.'; return; }
+  o.className='check good'; o.innerHTML='<b>'+esc(r.gameName)+'</b> · '+esc(r.display)+'<br>'+r.correct+' of '+r.answered+' correct · '+esc(setLabel(r))+(r.len?' · '+r.len+' min':'')+(r.date?' · '+fmtDate(r.date):'')+(r.old?' · older code':''); }
+
+/* ---------- post to the student leaderboard (leaderboard.json in the repo) ---------- */
+/* GitHub Pages: OWNER.github.io/REPO/teacher.html, or OWNER.github.io/teacher.html when the repo is named OWNER.github.io */
+var OWNER=location.hostname.split('.')[0], SEG=location.pathname.split('/').filter(Boolean),
+    REPO=(SEG.length>1||(SEG.length===1&&!/\.html?$/.test(SEG[0])))? SEG[0] : location.hostname;
+var API='https://api.github.com/repos/'+OWNER+'/'+REPO+'/contents/leaderboard.json';
+try{ document.getElementById('gh-owner').textContent=OWNER; document.getElementById('gh-repo').textContent=REPO; }catch(e){}
+function dayIso(d){ return d?d.toISOString().slice(0,10):''; }
+function boardData(){ var out={ updated:new Date().toISOString(), games:{} };
+  Object.keys(C.GAMES).forEach(function(id){ var top=rankFor(id,'*','all').slice(0,10); if(!top.length) return;
+    out.games[id]={ name:C.GAMES[id][1], top:top.map(function(e){ return { name:e.name.slice(0,30), score:e.display, acc:e.answered?Math.round(100*e.correct/e.answered):null, set:setLabel(e), date:dayIso(e.date) }; }) }; });
+  return out; }
+function pubStatus(t,cls){ var o=$('pub-status'); o.className='status'+(cls?' '+cls:''); o.textContent=t; }
+function b64(s){ return btoa(unescape(encodeURIComponent(s))); }
+function key(){ try{ return localStorage.getItem(TKEY)||''; }catch(e){ return ''; } }
+function tokState(){ $('tok-state').innerHTML=key()?'<span class="saved">Key saved in this browser.</span> <a href="#" id="tok-forget">Forget it</a>':'No key saved yet. Steps below.'; }
+function publish(){ var k=key(); if(!k){ pubStatus('Paste your GitHub key on the right first (steps below it), or use Download file instead.','bad'); $('token').focus(); return; }
+  var data=boardData(), n=Object.keys(data.games).length, text=JSON.stringify(data,null,1);
+  if(!n&&!confirm('No scores are showing, so this will empty the student leaderboard. Post anyway?')) return;
+  var h={ 'Authorization':'Bearer '+k, 'Accept':'application/vnd.github+json', 'X-GitHub-Api-Version':'2022-11-28' };
+  $('publish').disabled=true; pubStatus('Posting…');
+  fetch(API+'?ref=main&t='+Date.now(),{ headers:h, cache:'no-store' }).then(function(r){
+    if(r.status===404) return null; if(!r.ok) throw r; return r.json(); })
+  .then(function(cur){ return fetch(API,{ method:'PUT', headers:h, body:JSON.stringify({ message:'Update the student leaderboard', content:b64(text+'\n'), branch:'main', sha:cur?cur.sha:undefined }) }); })
+  .then(function(r){ if(!r.ok) throw r;
+    var t=new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'}); try{ localStorage.setItem('spitz_posted',t); }catch(e){}
+    pubStatus('Posted at '+t+': '+n+' game'+(n===1?'':'s')+'. The student leaderboard updates in a minute or two.','good'); })
+  .catch(function(r){ var s=r&&r.status;
+    pubStatus(s===401?'GitHub didn’t accept the key. It may have expired; make a new one with the steps on the right.':
+      s===403||s===404?'The key can’t change '+REPO+'. Check it has Contents: Read and write on that repository.':
+      s===409?'GitHub was busy saving another change. Click Post again.':'Couldn’t reach GitHub. Check the internet connection and try again, or use Download file instead.','bad'); })
+  .then(function(){ $('publish').disabled=false; }); }
+function download(){ var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([JSON.stringify(boardData(),null,1)+'\n'],{type:'application/json'})); a.download='leaderboard.json'; document.body.appendChild(a); a.click(); a.remove();
+  pubStatus('Downloaded leaderboard.json. On github.com open '+REPO+', go into the data folder, choose Add file, Upload files, and drop it in to replace the old one.','good'); }
+$('publish').addEventListener('click',publish); $('download').addEventListener('click',download);
+$('tok-save').addEventListener('click',function(){ var v=$('token').value.trim(); if(!v) return; try{ localStorage.setItem(TKEY,v); }catch(e){} $('token').value=''; tokState(); });
+$('tok-state').addEventListener('click',function(e){ if(e.target.id!=='tok-forget') return; e.preventDefault(); try{ localStorage.removeItem(TKEY); }catch(err){} tokState(); });
+$('board').addEventListener('click',function(e){ var b=e.target.closest('[data-hide]'); if(!b) return; hidden[b.dataset.hide]=b.dataset.name; saveHidden(); render(); });
+$('hidden').addEventListener('click',function(e){ var b=e.target.closest('[data-unhide]'); if(!b) return; delete hidden[b.dataset.unhide]; saveHidden(); render(); });
+tokState();
+
+$('go').addEventListener('click',function(){ try{ localStorage.setItem(KEY,$('paste').value); }catch(e){} parse($('paste').value); });
+$('clear').addEventListener('click',function(){ $('paste').value=''; try{ localStorage.removeItem(KEY); }catch(e){} parse(''); });
+$('tabs').addEventListener('click',function(e){ var b=e.target.closest('button'); if(!b) return; st.game=b.dataset.g; st.set='*'; render(); });
+$('f-set').addEventListener('change',function(){ st.set=this.value; render(); });
+$('f-when').addEventListener('change',function(){ st.when=this.value; render(); });
+$('show').addEventListener('click',showBig); $('big-x').addEventListener('click',closeBig);
+document.addEventListener('keydown',function(e){ if(e.key==='Escape'&&!$('big').hidden) closeBig(); });
+$('one-name').addEventListener('input',checkOne); $('one-code').addEventListener('input',checkOne);
+try{ $('paste').value=localStorage.getItem(KEY)||''; }catch(e){}
+parse($('paste').value);
+})();
 </script>
 </body>
 </html>
