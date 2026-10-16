@@ -1,168 +1,48 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Math 7 Arcade</title>
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Numlings</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bungee&family=Lilita+One&family=Racing+Sans+One&family=Pixelify+Sans:wght@600&family=Graduate&family=Righteous&family=Russo+One&family=Permanent+Marker&family=Bangers&family=Exo+2:ital,wght@1,900&family=Dela+Gothic+One&family=Shrikhand&family=Bowlby+One&family=Lexend:wght@400;600;800&family=JetBrains+Mono:wght@500&display=swap">
-<style>
-/* Layout: arcade cabinet lobby. Step 1 pick a game (card grid), step 2 pick question set + topics, sticky launch bar. Single dark look to match the games. */
-:root{
-  --paper:#0E1016; --panel:#191C25; --panel2:#222634; --line:#2E3344;
-  --ink:#F3F5FA; --muted:#9AA3B8; --brand:#FFB020; --ok:#7CE04A;
-  --display:'Bungee', 'Arial Black', system-ui, sans-serif;
-  --body:'Lexend', system-ui, sans-serif;
-  --mono:'JetBrains Mono', ui-monospace, monospace;
-  color-scheme:dark;
-}
-html,body{ background:var(--paper); color:var(--ink); }
-body{ font:400 16px/1.5 var(--body); padding-inline:16px; padding-block:0 120px; }
-.wrap{ max-width:1100px; margin:0 auto; display:flex; flex-direction:column; gap:36px; }
-header{ display:flex; flex-wrap:wrap; align-items:flex-end; justify-content:space-between; gap:12px; padding-top:32px; }
-h1{ font:400 clamp(34px,6vw,58px)/1 var(--display); margin:0; letter-spacing:.01em; }
-h1 span{ color:var(--brand); }
-.tag{ font:600 14px/1 var(--body); color:var(--muted); letter-spacing:.14em; text-transform:uppercase; }
-.proto{ font-size:14px; color:var(--muted); background:var(--panel); border:1px dashed var(--line); border-radius:10px; padding:10px 14px; }
-h2{ font:400 22px/1.1 var(--display); margin:0 0 14px; display:flex; gap:12px; align-items:center; }
-h2 .n{ font:800 14px/1 var(--body); background:var(--brand); color:var(--paper); border-radius:99px; width:28px; height:28px; display:grid; place-items:center; }
-.games{ display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); gap:12px; }
-.game{ all:unset; cursor:pointer; background:var(--gp); border:3px solid color-mix(in srgb,var(--acc) 22%,var(--line)); border-radius:18px; padding:10px 10px 14px; display:flex; flex-direction:column; gap:8px; transition:transform .12s, border-color .12s; }
-.game:hover{ transform:translateY(-2px); }
-.game:focus-visible{ outline:3px solid var(--ink); outline-offset:2px; }
-.game[aria-pressed="true"]{ border-color:var(--acc); box-shadow:0 0 0 4px color-mix(in srgb,var(--acc) 35%,transparent), 0 10px 30px color-mix(in srgb,var(--acc) 25%,transparent); }
-.art{ display:block; width:100%; height:auto; aspect-ratio:200/110; border-radius:12px; overflow:hidden; background:var(--gpanel); }
-.game b{ font:400 19px/1.1 var(--display); color:var(--acc); padding-inline:4px; }
-.game small{ color:var(--muted); font-size:13px; padding-inline:4px; }
-.game:hover{ border-color:color-mix(in srgb,var(--acc) 60%,var(--line)); }
-.sets{ display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; }
-.set{ background:var(--panel); border:3px solid var(--line); border-radius:16px; padding:16px; display:flex; flex-direction:column; gap:12px; }
-.set.on{ border-color:var(--brand); }
-.set label.head{ display:flex; gap:10px; align-items:center; font:800 18px/1.2 var(--body); cursor:pointer; }
-.set .unit{ color:var(--muted); font-size:13px; }
-.chips{ display:flex; flex-wrap:wrap; gap:8px; }
-.chip{ position:relative; }
-.chip input{ position:absolute; opacity:0; }
-.chip span{ display:block; padding:8px 12px; border-radius:99px; background:var(--panel2); border:2px solid var(--line); font-size:14px; font-weight:600; cursor:pointer; }
-.chip input:checked + span{ background:var(--brand); color:var(--paper); border-color:var(--brand); }
-.chip input:focus-visible + span{ outline:2px solid var(--ink); outline-offset:2px; }
-.set:not(.on) .chips{ opacity:.45; }
-input[type=radio]{ accent-color:var(--brand); width:18px; height:18px; }
-.team{ background:var(--panel); border-radius:16px; padding:16px; color:var(--muted); font-size:15px; }
-.team b{ color:var(--ink); }
-.bar{ position:fixed; left:0; right:0; bottom:0; background:color-mix(in srgb,var(--paper) 92%,transparent); backdrop-filter:blur(8px); border-top:1px solid var(--line); padding:14px 16px calc(14px + env(safe-area-inset-bottom,0px)); }
-.bar .in{ max-width:1100px; margin:0 auto; display:flex; flex-wrap:wrap; gap:12px; align-items:center; justify-content:space-between; }
-.sum{ min-width:0; flex:1 1 300px; }
-.sum div{ font-weight:800; }
-.sum code{ display:block; font:500 12px/1.4 var(--mono); color:var(--muted); overflow-wrap:anywhere; }
-.play{ all:unset; cursor:pointer; font:400 22px/1 var(--display); background:var(--brand); color:var(--paper); padding:16px 30px; border-radius:14px; }
-.play[disabled]{ opacity:.4; cursor:not-allowed; }
-.play:focus-visible{ outline:3px solid var(--ink); outline-offset:3px; }
-.toast{ color:var(--ok); font-size:14px; }
-@media (prefers-reduced-motion:reduce){ .game{ transition:none; } }
-
-.set.off{ opacity:.45; }
-.set.off label.head{ cursor:not-allowed; }
-.soon{ font:600 12px/1 var(--body); color:var(--muted); letter-spacing:.1em; text-transform:uppercase; }
-.chip input:disabled + span{ cursor:default; }
-.teach{ display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
-.teach a{ color:var(--ink); background:var(--panel2); border:2px solid var(--line); border-radius:12px; padding:10px 14px; text-decoration:none; font-weight:600; }
-.teach a:hover,.teach a:focus-visible{ border-color:var(--brand); }
-a.play{ text-decoration:none; }
-a.play[aria-disabled="true"]{ opacity:.4; pointer-events:none; }
-.hr{ display:flex; flex-wrap:wrap; gap:12px; align-items:center; }
-.hr .proto{ margin:0; }
-.lblink{ display:inline-flex; align-items:center; gap:8px; font:400 18px/1 var(--display); color:var(--paper); background:var(--brand); padding:12px 18px; border-radius:14px; text-decoration:none; }
-.lblink:hover{ filter:brightness(1.08); }
-.lblink:focus-visible{ outline:3px solid var(--ink); outline-offset:3px; }
-.ideas{ background:var(--panel); border:3px dashed var(--line); border-radius:18px; padding:18px 20px; display:flex; flex-wrap:wrap; gap:14px 24px; align-items:center; justify-content:space-between; }
-.ideas[hidden]{ display:none; }
-.ideas h2{ margin:0 0 4px; }
-.ideas p{ margin:0; color:var(--muted); font-size:15px; max-width:520px; }
-.ideas .btns{ display:flex; flex-wrap:wrap; gap:10px; }
-.ideas a{ font:800 16px/1 var(--body); color:var(--ink); background:var(--panel2); border:2px solid var(--line); border-radius:12px; padding:13px 16px; text-decoration:none; }
-.ideas a:hover,.ideas a:focus-visible{ border-color:var(--brand); outline:none; }
-.game{ position:relative; }
-.game .new{ position:absolute; top:4px; right:4px; font:400 12px/1 var(--display); letter-spacing:.06em; color:var(--paper); background:var(--acc); padding:6px 9px; border-radius:99px; box-shadow:0 2px 8px rgba(0,0,0,.45); }
-</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Lexend:wght@400;600;700&family=Sniglet:wght@400;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-
-<div class="wrap">
-  <header>
-    <div>
-      <div class="tag">7th grade TEKS · Games by Mr. Spitz 🍔</div>
-      <h1>Math 7 <span>Arcade</span></h1>
-    </div>
-    <div class="hr">
-      <p class="proto">Pick a game, then the questions you want to practice.</p>
-      <a class="lblink" href="leaderboard.html"><span aria-hidden="true">🏆</span> Leaderboard</a>
-    </div>
-  </header>
-
-  <section>
-    <h2><span class="n">1</span>Pick a game</h2>
-    <div class="games" id="games"></div>
-  </section>
-
-  <section>
-    <h2><span class="n">2</span>Pick your questions</h2>
-    <div class="sets" id="sets"></div>
-  </section>
-
-  <section class="ideas" id="ideas" hidden>
-    <div><h2><span aria-hidden="true">💡</span> Suggestion box</h2><p>Found a bug, or have an idea for a new game? Tell us here. Only your teacher sees what you send.</p></div>
-    <div class="btns"><a id="idea-bug" target="_blank" rel="noopener" href="#">🐞 Report a bug</a><a id="idea-game" target="_blank" rel="noopener" href="#">🎮 Suggest a game</a></div>
-  </section>
-
-</div>
-
-<div class="bar">
-  <div class="in">
-    <div class="sum"><div id="sumtxt">Pick a game</div></div>
-    <a class="play" id="play" href="#" aria-disabled="true">Play</a>
-  </div>
-</div>
-
-<script src="catalog.js"></script>
-<script src="questions.js"></script>
+<div id="app" aria-live="off"></div>
+<nav class="nav" id="nav" hidden aria-label="Main"></nav>
+<div id="modal-root"></div>
 <script>
-var GAMES=window.SpitzGames;
-/* the question sets come straight from games/questions.js, so the hub always matches what the games ask */
-var SETS=Object.keys(window.SpitzQ.sets).map(function(id){ var x=window.SpitzQ.sets[id]; return { id:id, name:x.name, unit:'TEKS '+x.teks, topics:x.topics.map(function(t){ return [t[0],t[1]]; }) }; });
-var st={game:null,set:'rat',t:{}};
-SETS.forEach(function(x){ st.t[x.id]=x.topics.map(function(t){ return t[0]; }); });
-try{ var sv=JSON.parse(localStorage.getItem('math7_hub1')||'null'); if(sv&&sv.t) SETS.forEach(function(x){ if(sv.t[x.id]) st.t[x.id]=sv.t[x.id].filter(function(t){ return x.topics.some(function(y){ return y[0]===t; }); }); }), st.game=sv.game||null, st.set=(sv.set&&st.t[sv.set])?sv.set:'rat'; }catch(e){}
-function $(i){ return document.getElementById(i); }
-function save(){ try{ localStorage.setItem('math7_hub1',JSON.stringify(st)); }catch(e){} }
-
-$('games').innerHTML=GAMES.map(function(g){ return '<button class="game" style="--acc:'+g.acc+';--gp:'+g.paper+';--gpanel:'+g.panel+';--gf:'+g.font+', var(--display)" data-g="'+g.id+'" aria-pressed="false">'+(g.isNew?'<span class="new">NEW</span>':'')+'<svg class="art" viewBox="0 0 200 110" aria-hidden="true">'+g.art+'</svg><b>'+g.name+'</b><small>'+g.d+'</small></button>'; }).join('');
-$('sets').innerHTML=SETS.map(function(s){ return '<div class="set" data-s="'+s.id+'"><label class="head"><input type="radio" name="set" id="set-'+s.id+'" value="'+s.id+'"><span>'+s.name+'<br><span class="unit">'+s.unit+'</span></span></label><div class="chips">'+
-  s.topics.map(function(t){ return '<label class="chip"><input type="checkbox" id="t-'+s.id+'-'+t[0]+'" data-s="'+s.id+'" value="'+t[0]+'"><span>'+t[1]+'</span></label>'; }).join('')+'</div></div>'; }).join('');
-
-function gameOf(){ return GAMES.filter(function(x){ return x.id===st.game; })[0]; }
-function render(){
-  var g=gameOf();
-  document.querySelectorAll('.game').forEach(function(b){ b.setAttribute('aria-pressed',b.dataset.g===st.game?'true':'false'); });
-  document.querySelectorAll('.set').forEach(function(el){ var on=el.dataset.s===st.set; el.classList.toggle('on',on); el.querySelector('input[type=radio]').checked=on; });
-  document.querySelectorAll('.chip input').forEach(function(c){ c.checked=st.t[c.dataset.s].indexOf(c.value)>=0; });
-  var s=SETS.filter(function(x){ return x.id===st.set; })[0], ts=st.t[st.set], ok=g&&ts.length, p=$('play');
-  p.setAttribute('aria-disabled',ok?'false':'true');
-  p.href=ok?g.id+'.html?set='+st.set+'&topics='+ts.join(','):'#';
-  $('sumtxt').textContent=!g?'Pick a game':!ts.length?'Pick at least one topic':g.name+' · '+s.name+(ts.length<s.topics.length?' ('+ts.length+' of '+s.topics.length+' topics)':'');
-}
-$('games').addEventListener('click',function(e){ var b=e.target.closest('.game'); if(!b) return; st.game=b.dataset.g; save(); render(); });
-$('sets').addEventListener('change',function(e){ var el=e.target;
-  if(el.type==='radio'){ st.set=el.value; }
-  else { var a=st.t[el.dataset.s]; if(el.checked){ if(a.indexOf(el.value)<0) a.push(el.value); } else st.t[el.dataset.s]=a.filter(function(v){ return v!==el.value; }); st.set=el.dataset.s; }
-  save(); render(); });
-render();
-
-/* Suggestion box: hidden until you paste your own Google Form link in url (bug and idea are optional pre-fill parts). */
-var SUGGEST={ url:'', bug:'', idea:'' };
-(function(){ if(!SUGGEST.url) return;
-  $('idea-bug').href=SUGGEST.url+'?usp=pp_url&'+SUGGEST.bug; $('idea-game').href=SUGGEST.url+'?usp=pp_url&'+SUGGEST.idea; $('ideas').hidden=false; })();
+/* After you upload changed files, raise VERSION by 1 so every browser grabs the new copies instead of old cached ones. */
+const VERSION = 6;
+/* The game files, in the order they must load. Add new files to this list. */
+const FILES = [
+  'js/config.js',
+  'js/util.js', 'js/i18n.js',
+  'data/zones.js',
+  'data/species.js',
+  'js/art-vector.js',
+  'js/art-pixel.js',
+  'data/questions.js',
+  'js/state.js',
+  'js/popup.js',
+  'data/maps.js',
+  'data/quests.js',
+  'js/map.js',
+  'js/quests.js',
+  'js/sprites.js',
+  'js/dungeon.js',
+  'js/screens.js',
+  'js/encounter.js',
+  'js/battle.js',
+  'js/team.js',
+  'js/trial.js',
+  'js/savepage.js',
+  'js/main.js'
+];
+for (const f of FILES) { const s = document.createElement('script'); s.src = f + '?v=' + VERSION; s.async = false; document.body.appendChild(s); }
+document.querySelector('link[href^="css/style.css"]').href = 'css/style.css?v=' + VERSION;
 </script>
 </body>
 </html>

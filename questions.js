@@ -1,1021 +1,790 @@
-/* Grade 7 TEKS question sets for the arcade games.
-   Built on Kody Spitz's Spitz Arcade engine: every game loads this file and asks SpitzQ.forGame(prefix) for questions,
-   and the hub link picks the set and topics:  game.html?set=pct&topics=disc,tax
-   Same rules as the original bank: each question carries an independent check, the right answer must pass it,
-   no wrong answer may pass it, and every wrong answer carries a short "why" that students see. */
-(function(){
+/* Numlings: question generators (English and Spanish), the skill catalog, adaptive selection, and answer checking */
 'use strict';
+/* =========================================================================
+   Every generator returns:
+     { html, answer, answerText, explain, hint, mistakes: [{ v, msg }], long? }
+   Any text a student reads is a pair, L(english, spanish), so both languages always describe the same numbers.
+   hint      : a first step that doesn't give away the answer (shown after a first miss)
+   mistakes  : common wrong answers and what they usually mean. If a student types one of these,
+               the game names the mistake instead of just saying "not quite."
+   A generic "right size, wrong sign" check is added automatically to every number question.
+   ========================================================================= */
+const Q = {};
+const mk = (v, msg) => ({ v, msg });
+const signRuleL = (a, b) => ((a < 0) === (b < 0)
+  ? L('Same signs give a positive answer.', 'Signos iguales dan un resultado positivo.')
+  : L('Different signs give a negative answer.', 'Signos diferentes dan un resultado negativo.'));
 
-/* ---------------- shared helpers (one copy per game prefix) ---------------- */
-function helpers(PFX){
-  var H={}, MINUS='−';
-  H.MINUS=MINUS;
-  H.ri=function(a,b){ return a+Math.floor(Math.random()*(b-a+1)); };
-  H.nz=function(a,b){ var v; do{ v=H.ri(a,b); }while(v===0); return v; };
-  H.pick=function(a){ return a[Math.floor(Math.random()*a.length)]; };
-  H.chance=function(p){ return Math.random()<p; };
-  H.shuffle=function(a){ for(var i=a.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)), t=a[i]; a[i]=a[j]; a[j]=t; } return a; };
-  H.gcd=function(a,b){ a=Math.abs(a); b=Math.abs(b); while(b){ var t=a%b; a=b; b=t; } return a; };
-  H.lcm=function(a,b){ return Math.abs(a*b)/H.gcd(a,b); };
-  /* exact fractions {n,d} */
-  H.R=function(n,d){ if(d===undefined) d=1; if(d<0){ n=-n; d=-d; } var g=H.gcd(n,d)||1; return {n:n/g,d:d/g}; };
-  H.isR=function(v){ return !!v&&typeof v==='object'&&typeof v.n==='number'&&typeof v.d==='number'&&Object.keys(v).length===2; };
-  H.add=function(a,b){ return H.R(a.n*b.d+b.n*a.d,a.d*b.d); };
-  H.sub=function(a,b){ return H.R(a.n*b.d-b.n*a.d,a.d*b.d); };
-  H.mul=function(a,b){ return H.R(a.n*b.n,a.d*b.d); };
-  H.div=function(a,b){ return H.R(a.n*b.d,a.d*b.n); };
-  H.neg=function(a){ return H.R(-a.n,a.d); };
-  H.absR=function(a){ return H.R(Math.abs(a.n),a.d); };
-  H.eqR=function(a,b){ return H.isR(a)&&H.isR(b)&&a.n*b.d===b.n*a.d; };
-  H.val=function(a){ return a.n/a.d; };
-  /* a decimal like 3.25 as an exact fraction */
-  H.D=function(x){ var k=0; while(Math.abs(Math.round(x*Math.pow(10,k))-x*Math.pow(10,k))>1e-9&&k<8) k++; return H.R(Math.round(x*Math.pow(10,k)),Math.pow(10,k)); };
-  function commas(s){ return s.replace(/\B(?=(\d{3})+(?!\d))/g,','); }
-  H.num=function(n){ return n<0? MINUS+commas(''+(-n)) : commas(''+n); };
-  /* terminating decimal text for an exact fraction, or null if it doesn't end within 6 places */
-  H.decStr=function(r){ for(var k=0;k<=6;k++){ var m=Math.pow(10,k); if((r.n*m)%r.d===0){ var N=r.n*m/r.d; return H.fixed(N,k,true); } } return null; };
-  /* integer N read as N / 10^k, e.g. fixed(1250,2) = "12.50"; trim drops trailing zeros */
-  H.fixed=function(N,k,trim){ var neg=N<0, s=''+Math.abs(N); while(s.length<=k) s='0'+s;
-    var w=k?s.slice(0,-k):s, f=k?s.slice(-k):''; if(trim) f=f.replace(/0+$/,''); return (neg?MINUS:'')+commas(w)+(f?'.'+f:''); };
-  H.money=function(cents){ return (cents<0?MINUS:'')+'$'+H.fixed(Math.abs(cents),2); };
-  H.moneyR=function(r){ return H.money(Math.round(H.val(r)*100)); };
-  H.frac=function(n,d){ return '<span class="'+PFX+'-fr"><span>'+n+'</span><span>'+d+'</span></span>'; };
-  /* fraction text, as a mixed number when it is more than 1 */
-  H.fmtF=function(r,improper){ if(r.d===1) return H.num(r.n); var neg=r.n<0, n=Math.abs(r.n), w=Math.floor(n/r.d), p=n%r.d;
-    return (neg?MINUS:'')+((!improper&&w>0)? w+H.frac(p,r.d) : H.frac(n,r.d)); };
-  /* plain-text fraction for SVG labels */
-  H.fmtFt=function(r){ if(r.d===1) return H.num(r.n); var neg=r.n<0, n=Math.abs(r.n), w=Math.floor(n/r.d), p=n%r.d; return (neg?MINUS:'')+(w>0? w+' '+p+'/'+r.d : n+'/'+r.d); };
-  H.fmtD=function(r){ var s=H.decStr(r); return s===null? H.fmtF(r) : s; };
-  H.C=function(html,val,why){ return {html:html,val:val,why:why||'',key:html}; };
-  H.eq=function(h){ return '<span class="'+PFX+'-eq">'+h+'</span>'; };
-  H.big=function(h){ return '<span class="'+PFX+'-eq" style="font-size:1.3em">'+h+'</span>'; };
-  H.ans=function(h){ return '<span class="c-ans">'+h+'</span>'; };
-  H.hl=function(h){ return '<span class="c-m">'+h+'</span>'; };
-  H.par=function(txt,isNeg){ return isNeg? '('+txt+')' : txt; };
-  /* SVG pieces: every picture is a 380 × 380 box, the size the games make room for */
-  H.FONT=' font-family="Inter,Lexend,sans-serif" font-weight="800"';
-  H.COL={ grid:'#2A3142', axis:'#C9D1E0', ink:'#F2F4F8', mute:'#9BA5B8', y:'#FFC82E', c:'#3DE0FF', r:'#FF5A5A', p:'#FF8BD8', g:'#7CE04A', v:'#D9A6FF', o:'#FF9F43', fill:'#232838' };
-  H.svg=function(inner,label){ return '<svg class="'+PFX+'-graph" width="380" height="380" viewBox="0 0 380 380" role="img" aria-label="'+(label||'Picture for the question')+'">'+inner+'</svg>'; };
-  H.t=function(x,y,s,size,fill,anchor){ return '<text x="'+(+x).toFixed(1)+'" y="'+(+y).toFixed(1)+'" text-anchor="'+(anchor||'middle')+'" font-size="'+(size||22)+'" fill="'+(fill||H.COL.ink)+'"'+H.FONT+'>'+s+'</text>'; };
-  /* label with a dark halo so it reads on top of lines */
-  H.tb=function(x,y,s,size,fill,anchor){ return '<text x="'+(+x).toFixed(1)+'" y="'+(+y).toFixed(1)+'" text-anchor="'+(anchor||'middle')+'" font-size="'+(size||22)+'" fill="'+(fill||H.COL.ink)+'" stroke="#0E1016" stroke-width="5" paint-order="stroke"'+H.FONT+'>'+s+'</text>'; };
-  H.line=function(x1,y1,x2,y2,col,w,dash){ return '<line x1="'+(+x1).toFixed(1)+'" y1="'+(+y1).toFixed(1)+'" x2="'+(+x2).toFixed(1)+'" y2="'+(+y2).toFixed(1)+'" stroke="'+col+'" stroke-width="'+(w||3)+'" stroke-linecap="round"'+(dash?' stroke-dasharray="'+dash+'"':'')+'/>'; };
-  H.poly=function(pts,fill,stroke,w){ return '<polygon points="'+pts.map(function(p){ return p[0].toFixed(1)+','+p[1].toFixed(1); }).join(' ')+'" fill="'+(fill||'none')+'" stroke="'+(stroke||'none')+'" stroke-width="'+(w||3)+'" stroke-linejoin="round"/>'; };
-  /* a table: head = column titles, rows = arrays of strings; widths optional (fractions of 380) */
-  H.table=function(head,rows,widths){ var n=rows.length+1, h=Math.min(64,380/n), top=(380-h*n)/2, cols=head.length, s='', x=0;
-    widths=widths||head.map(function(){ return 1/cols; }); var xs=[]; widths.forEach(function(w){ xs.push([x,x+w*380]); x+=w*380; });
-    var fs=Math.min(30,h*0.5);
-    s+='<rect x="0" y="'+top+'" width="380" height="'+h+'" fill="'+H.COL.fill+'"/>';
-    head.forEach(function(c,i){ s+=H.t((xs[i][0]+xs[i][1])/2,top+h/2+fs*0.36,c,fs*0.9,H.COL.axis); });
-    rows.forEach(function(r,j){ var yy=top+(j+1)*h+h/2+fs*0.36; r.forEach(function(c,i){ s+=H.t((xs[i][0]+xs[i][1])/2,yy,c,fs,H.COL.ink); }); });
-    for(var i=1;i<n;i++) s+=H.line(0,top+i*h,380,top+i*h,'#343B4D',2);
-    for(i=1;i<cols;i++) s+=H.line(xs[i][0],top,xs[i][0],top+n*h,'#343B4D',2);
-    return s; };
-  /* pick wrong answers: first the right one, then candidates [value, why, label?] that are new and valid */
-  H.choices=function(right,cands,fmt,ok){ var out=[right], keys={}; keys[right.key]=1;
-    cands.forEach(function(c){ if(out.length>=4||c===null||c===undefined) return; var v=c[0]; if(v===null||v===undefined) return; if(ok&&!ok(v)) return;
-      var html=c[2]!==undefined? c[2] : fmt(v); if(html===null||keys[html]) return;
-      if(out.some(function(o){ return H.isR(o.val)&&H.isR(v)? H.eqR(o.val,v) : o.val===v; })) return;
-      keys[html]=1; out.push(H.C(html,v,c[1])); });
-    return out; };
-  return H;
-}
-
-/* sort key for "smallest to largest" choice order; null means not a number */
-function sortKey(v){ if(typeof v==='number') return v; if(v&&typeof v==='object'&&typeof v.n==='number'&&typeof v.d==='number'&&Object.keys(v).length===2) return v.n/v.d; return null; }
-
-/* every set's generators go through this */
-function builder(GEN,setId){
-  return function build(type){ var last='', target=Math.floor(Math.random()*4), miss=0;   /* the right answer's slot, picked first so every slot is equally likely */
-    for(var tries=0;tries<600;tries++){ var q=GEN[type](); if(!q) continue;
-      if(!q.choices||q.choices.length!==4) continue;
-      if(new Set(q.choices.map(function(c){ return c.key; })).size!==4) continue;
-      if(!q.check(q.choices[0].val)) { last='right answer failed its check'; continue; }                     // the answer must pass the independent check
-      if(q.choices.slice(1).some(function(c){ return q.check(c.val); })) { last='a wrong answer passed'; continue; }  // and no distractor may pass it
-      if(q.choices.slice(1).some(function(c){ return !c.why; })) { last='missing why'; continue; }
-      q.type=type; q.choices.forEach(function(c,i){ c.ok=i===0; });
-      var keys=q.choices.map(function(c){ return sortKey(c.val); });
-      if(q.keepOrder){ if(q.order) q.choices.sort(function(a,b){ return q.order(a.val)-q.order(b.val); }); }
-      else { var sorted=keys.every(function(k){ return k!==null; });
-        if(sorted){ var tmp=q.choices.slice().sort(function(a,b){ return sortKey(a.val)-sortKey(b.val); });     // numbers read best smallest to largest,
-          if(tmp.findIndex(function(c){ return c.ok; })!==target&&miss++<30) continue;                             // but only when that puts the answer in the target slot
-          if(tmp.findIndex(function(c){ return c.ok; })===target) q.choices=tmp; else sorted=false; }
-        if(!sorted){ var ok=q.choices[0], rest=q.choices.slice(1); for(var i=rest.length-1;i>0;i--){ var j=Math.floor(Math.random()*(i+1)), t=rest[i]; rest[i]=rest[j]; rest[j]=t; }
-          rest.splice(target,0,ok); q.choices=rest; } }
-      delete q.keepOrder; delete q.order; q.visual=q.visual||''; q.data=q.data||{}; delete q.check; return q; }
-    throw new Error('generator failed: '+setId+'.'+type+' ('+last+')'); };
-}
-
-/* ================= 7.3A  Rational number operations =================
-   One problem uses one kind of number: decimals, fractions/mixed numbers, or integers, so the answer choices match. */
-function G_rat(H){
-  var R=H.R;
-  function kind(){ var r=Math.random(); return r<0.45?'dec':r<0.85?'frac':'int'; }
-  function decOp(places){ var m=places===2?100:10, v=H.nz(-12*m,12*m); return R(v,m); }
-  var DENS=[2,3,4,5,6,8,10,12];
-  function fracOp(d,mixed){ var n=H.ri(1,d-1); if(H.gcd(n,d)!==1&&H.chance(0.6)) n=1; var w=mixed?H.ri(1,3):0, r=R(w*d+n,d); return H.chance(0.5)?H.neg(r):r; }
-  function pair(k,op){ var a,b;
-    if(k==='int'){ a=R(H.nz(-20,20)); b=R(H.nz(-20,20)); if(op==='mul'||op==='div'){ a=R(H.nz(-12,12)); b=R(H.nz(-12,12)); } }
-    else if(k==='dec'){ var pl=(op==='add'||op==='sub')&&H.chance(0.4)?2:1; a=decOp(pl); b=decOp(1); if(H.chance(0.5)){ var t=a; a=b; b=t; } }
-    else { var d1=H.pick(DENS), d2=H.pick(DENS); if(H.lcm(d1,d2)>24) return null; a=fracOp(d1,H.chance(0.3)); b=fracOp(d2,H.chance(0.25)); if(a.d===1||b.d===1) return null; }
-    if(a.n>0&&b.n>0&&H.chance(0.85)){ if(H.chance(0.5)) a=H.neg(a); else b=H.neg(b); }   /* a negative most of the time: that is the skill */
-    return [a,b]; }
-  function fmtK(k){ return function(r){ if(k==='dec'){ var s=H.decStr(r); return s; } if(k==='int') return r.d===1?H.num(r.n):null; return H.fmtF(r); }; }
-  function signRuleAdd(a,b){ return (a.n<0)===(b.n<0)? 'Same signs: add the sizes and keep the sign.' : 'Different signs: subtract the sizes and keep the sign of the number farther from 0.'; }
-  function mk(op){ return function(){ var k=kind(), p=pair(k,op); if(!p) return null; var a=p[0], b=p[1], F=fmtK(k), ans, sym, cands=[], chk;
-    if(op==='div'){ /* build a ÷ b from a friendly quotient */
-      if(k==='dec'){ var q=H.chance(0.5)?R(H.nz(-12,12)):R(H.nz(-60,60),10); b=R(H.nz(-25,25),10); if(b.d===1) return null; a=H.mul(b,q); if(H.decStr(a)===null||H.decStr(a).replace(/[^0-9]/g,'').length>4) return null; }
-      if(k==='int'){ var qq=H.nz(-12,12); a=H.mul(b,R(qq)); }
-      if(a.n===0) return null; }
-    var bTxt=H.par(F(b),b.n<0);
-    if(op==='add'){ ans=H.add(a,b); sym=' + '; chk=function(v){ return H.eqR(H.sub(v,b),a); };
-      var A=H.absR(a), B=H.absR(b), sizeWrong=(a.n<0)===(b.n<0)? H.sub(A,B) : H.add(A,B); if(ans.n<0) sizeWrong=H.neg(sizeWrong);
-      cands=[[H.neg(ans),'Check the sign. '+signRuleAdd(a,b)],[sizeWrong,signRuleAdd(a,b)],[H.sub(a,b),'That subtracts. This problem adds.']];
-      if(k==='frac') cands.unshift([R(a.n+b.n,a.d+b.d),'Don’t add the denominators. Rewrite with a common denominator first.']);
-      if(k==='dec'){ var pa=(H.decStr(a).split('.')[1]||'').length, pb=(H.decStr(b).split('.')[1]||'').length; if(pa!==pb) cands.unshift([pa<pb? H.add(H.div(a,R(10)),b) : H.add(a,H.div(b,R(10))),'Line up the decimal points before you add.']); } }
-    else if(op==='sub'){ ans=H.sub(a,b); sym=' − '; chk=function(v){ return H.eqR(H.add(v,b),a); };
-      cands=[[H.add(a,b),'Subtracting means adding the opposite: '+F(a)+' + '+H.par(F(H.neg(b)),b.n>0)+'.'],[H.neg(ans),'Check the sign.'],[H.neg(H.add(a,b)),'Add the opposite first, then use the sign rules.']];
-      if(k==='frac'&&a.d!==b.d&&a.d-b.d!==0) cands.unshift([R(a.n-b.n,Math.abs(a.d-b.d)),'Don’t subtract the denominators. Rewrite with a common denominator first.']); }
-    else if(op==='mul'){ ans=H.mul(a,b); sym=' × '; chk=function(v){ return b.n!==0&&H.eqR(H.div(v,b),a); };
-      var rule=(a.n<0)===(b.n<0)?'Same signs give a positive.':'Different signs give a negative.';
-      cands=[[H.neg(ans),'Check the sign. '+rule]];
-      if(k==='dec') cands.push([H.mul(ans,R(10)),'Count the decimal places in both numbers.'],[H.div(ans,R(10)),'Count the decimal places in both numbers.']);
-      if(k==='frac') cands.push([H.div(a,b),'That divides. To multiply fractions, multiply the tops and multiply the bottoms.'],[H.add(a,b),'You added. This problem multiplies.']);
-      if(k==='int') cands.push([H.add(a,b),'You added. This problem multiplies.'],[H.neg(H.add(a,b)),'You added. This problem multiplies.']); }
-    else { ans=H.div(a,b); sym=' ÷ '; chk=function(v){ return H.eqR(H.mul(v,b),a); };
-      var rule2=(a.n<0)===(b.n<0)?'Same signs give a positive.':'Different signs give a negative.';
-      cands=[[H.neg(ans),'Check the sign. '+rule2],[H.div(R(1),ans),'That’s flipped. Divide the first number by the second.']];
-      if(k==='dec') cands.push([H.mul(ans,R(10)),'Move both decimal points the same number of places before dividing.'],[H.div(ans,R(10)),'Move both decimal points the same number of places before dividing.']);
-      if(k==='frac') cands.unshift([H.mul(a,b),'Dividing means multiplying by the reciprocal: flip the second fraction.']);
-      if(k==='int') cands.push([H.sub(a,b),'That subtracts. This problem divides.']); }
-    if(ans.n===0) return null;
-    if(F(ans)===null) return null;
-    var ch=H.choices(H.C(F(ans),ans),cands,F);
-    var explain=H.eq(F(a)+sym+bTxt+' = '+H.ans(F(ans)));
-    if(op==='add') explain=signRuleAdd(a,b)+' '+explain;
-    if(op==='sub') explain='Add the opposite: '+H.eq(F(a)+' + '+H.par(F(H.neg(b)),b.n>0))+'. '+explain;
-    if(op==='mul'||op==='div') explain=((a.n<0)===(b.n<0)?'Same signs: positive. ':'Different signs: negative. ')+explain;
-    return { prompt:H.big(F(a)+sym+bTxt+' = ?'), choices:ch, check:chk, explain:explain }; }; }
-  return { ratAdd:mk('add'), ratSub:mk('sub'), ratMul:mk('mul'), ratDiv:mk('div') };
-}
-
-/* ================= 7.3B  Rational number word problems ================= */
-function G_wp(H){
-  var R=H.R, M=H.money;
-  function deg(v){ return H.num(v)+'°F'; }
-  return {
-  wpTemp:function(){ var s=H.nz(-15,10), c=H.ri(5,22), up=H.chance(0.5), e=up?s+c:s-c; if(e===0||Math.abs(e)===Math.abs(s)) return null;
-    var cands=[[up?s-c:s+c, up?'It rose, so add '+c+'.':'It fell, so subtract '+c+'.'],[-e,'Check the sign.'],[Math.abs(s)+(up?c:-c),'Start at '+deg(s)+'. Below zero is negative.'],[e+(up?-10:10),'Start at '+deg(s)+' on a number line and count '+(up?'up':'down')+' '+c+'.']];
-    return { prompt:'At 6 a.m. it was '+deg(s)+'. By noon the temperature had '+(up?'risen':'dropped')+' '+c+'°F. What was the temperature at noon?',
-      choices:H.choices(H.C(deg(e),e),cands,deg), check:function(v){ return v-s===(up?c:-c); },
-      explain:H.eq(H.num(s)+(up?' + ':' − ')+c+' = '+H.ans(deg(e))) }; },
-  wpDiff:function(){ var hi=H.ri(2,30), lo=-H.ri(2,20), d=hi-lo;
-    var cands=[[hi+lo,'Find the distance between them: '+hi+' − ('+H.num(lo)+') = '+hi+' + '+(-lo)+'.'],[d+10,'Count across zero: '+hi+' down to 0, then 0 down to '+H.num(lo)+'.'],[-lo,'That only gets you from 0 to '+deg(lo)+'.'],[hi,'That only gets you from 0 to '+deg(hi)+'.']];
-    function f(v){ return v+'°F'; }
-    return { prompt:'The high was '+deg(hi)+' and the low was '+deg(lo)+'. How many degrees warmer was the high than the low?',
-      choices:H.choices(H.C(f(d),d),cands,f,function(v){ return v>0; }), check:function(v){ return lo+v===hi; },
-      explain:H.eq(hi+' − ('+H.num(lo)+') = '+hi+' + '+(-lo)+' = '+H.ans(d+'°F')) }; },
-  wpElev:function(){ var d=H.ri(10,60), r=H.ri(5,30), s=H.ri(5,40), e=-d+r-s; if(e>=0||e===-d) return null;
-    function f(v){ return H.num(v)+' ft'; }
-    var cands=[[-d-r+s,'Rising moves up (add). Diving deeper moves down (subtract).'],[d+r-s,'Below sea level is negative: start at '+H.num(-d)+' ft.'],[-d+r+s,'Diving deeper moves down, so subtract '+s+'.'],[-e,'Check the sign. The diver is below sea level.']];
-    return { prompt:'A diver is at '+H.num(-d)+' feet. She rises '+r+' feet, then dives '+s+' feet deeper. Where is she now?',
-      choices:H.choices(H.C(f(e),e),cands,f), check:function(v){ return v+s-r===-d; },
-      explain:H.eq(H.num(-d)+' + '+r+' − '+s+' = '+H.ans(f(e))) }; },
-  wpBuy:function(){ var have=H.ri(3,10)*500, n=H.ri(2,5), p=H.ri(150,1200); p=p-p%25; var left=have-n*p; if(left<=0) return null;
-    var item=H.pick(['notebooks','T-shirts','tacos','movie tickets','phone cases','smoothies']);
-    var cands=[[have-p,'You buy '+n+' of them: '+n+' × '+M(p)+' first.'],[n*p,'That’s what you spend. Subtract it from '+M(have)+'.'],[have-n*p+2*p,'Multiply '+n+' × '+M(p)+' carefully.'],[have+n*p,'Spending money means subtract.']];
-    return { prompt:'You have '+M(have)+'. You buy '+n+' '+item+' for '+M(p)+' each. How much money is left?',
-      choices:H.choices(H.C(M(left),left),cands,M,function(v){ return v>0; }), check:function(v){ var t=v; for(var i=0;i<n;i++) t+=p; return t===have; },
-      explain:H.eq(M(have)+' − '+n+' × '+M(p)+' = '+H.ans(M(left))) }; },
-  wpBank:function(){ var a=H.ri(5,40)*100+H.pick([0,25,50,75]), b=H.ri(30,90)*100, c=H.ri(10,50)*100+H.pick([0,25,50,75]), e=-a+b-c; if(e===0) return null;
-    var cands=[[a+b-c,'Overdrawn means the balance starts negative: '+M(-a)+'.'],[-a+b+c,'A payment takes money out, so subtract '+M(c)+'.'],[-a-b-c,'A deposit adds money.'],[-e,'Check the sign.']];
-    return { prompt:'Leo’s account balance is '+M(-a)+'. He deposits '+M(b)+', then pays a '+M(c)+' bill. What is the balance now?',
-      choices:H.choices(H.C(M(e),e),cands,M), check:function(v){ return v+c-b===-a; },
-      explain:H.eq(M(-a)+' + '+M(b)+' − '+M(c)+' = '+H.ans(M(e))) }; },
-  wpSplit:function(){ var n=H.pick([2,3,4,5]), each=H.ri(800,2500), tip=H.ri(2,8)*n*25; if(each*n-tip<n*300) return null; var bill=each*n-tip;
-    var cands=[[bill/n+tip,'Split the tip too: add first, then divide by '+n+'.'],[(bill-tip)/n,'The tip adds to the bill.'],[bill+tip,'That’s the total. Share it among '+n+' people.'],[bill/n,'Don’t forget the tip.']];
-    return { prompt:n+' friends share a '+M(bill)+' bill and leave a '+M(tip)+' tip. They split it evenly. How much does each person pay?',
-      choices:H.choices(H.C(M(each),each),cands,M,function(v){ return Number.isInteger(v)&&v>0; }), check:function(v){ return v*n===bill+tip; },
-      explain:H.eq('('+M(bill)+' + '+M(tip)+') ÷ '+n+' = '+H.ans(M(each))) }; },
-  wpRecipe:function(){ var a=H.pick([R(1,2),R(3,4),R(2,3),R(1,3),R(1,4),R(3,8)]), b=H.pick([R(3,2),R(5,2),R(2),R(3),R(7,4),R(5,4),R(4,3)]), ans=H.mul(a,b);
-    var cands=[[H.add(a,b),'Multiply: cups per batch × number of batches.'],[H.div(b,a),'That divides. Multiply cups per batch by batches.'],[H.div(a,b),'That divides. Multiply cups per batch by batches.']];
-    return { prompt:'A recipe uses '+H.fmtF(a)+' cup of sugar per batch. How many cups for '+H.fmtF(b)+' batches?',
-      choices:H.choices(H.C(H.fmtF(ans),ans),cands,H.fmtF), check:function(v){ return H.eqR(H.div(v,b),a); },
-      explain:H.eq(H.fmtF(a)+' × '+H.fmtF(b)+' = '+H.ans(H.fmtF(ans)+' cups')) }; },
-  wpRope:function(){ var p=H.pick([R(3,4),R(1,2),R(2,3),R(3,8),R(5,4),R(3,2)]), k=H.ri(4,12), L=H.mul(p,R(k)); if(L.d===1) return null;
-    function f(v){ return H.isR(v)? H.fmtF(v) : ''+v; }
-    var cands=[[H.mul(L,p),'Divide the whole length by the length of one piece.'],[R(Math.floor(H.val(L))),'That’s the length in feet, not the number of pieces.'],[H.sub(L,p),'That subtracts one piece. Divide to find how many pieces.'],[R(k+1),'Check: '+(k+1)+' × '+H.fmtFt(p)+' is more than '+H.fmtFt(L)+'.']];
-    return { prompt:'A ribbon is '+H.fmtF(L)+' feet long. You cut it into pieces '+H.fmtF(p)+' foot long. How many pieces do you get?',
-      choices:H.choices(H.C(''+k,R(k)),cands,f), check:function(v){ return H.eqR(H.mul(v,p),L); },
-      explain:H.eq(H.fmtF(L)+' ÷ '+H.fmtF(p)+' = '+H.ans(k+' pieces')) }; },
-  wpTrail:function(){ var t=H.add(R(H.ri(4,9)),H.pick([R(1,4),R(1,3),R(1,2),R(1,6),R(1,8)])), h=H.add(R(H.ri(1,3)),H.pick([R(3,4),R(2,3),R(1,2),R(5,6),R(3,8),R(5,8)])), left=H.sub(t,h);
-    if(left.n<=0||left.d===1) return null;
-    var tw=Math.floor(H.val(t)), hw=Math.floor(H.val(h));
-    var cands=[[H.add(t,h),'Subtract what she already hiked.'],[H.add(left,R(1)),'You may need to regroup: borrow 1 whole from '+tw+'.'],[H.sub(left,R(1)),'Check your regrouping.'],[R(tw-hw),'Don’t drop the fractions.']];
-    return { prompt:'A trail is '+H.fmtF(t)+' miles long. Ana has hiked '+H.fmtF(h)+' miles. How far does she have left?',
-      choices:H.choices(H.C(H.fmtF(left),left),cands,H.fmtF,function(v){ return v.n>0; }), check:function(v){ return H.eqR(H.add(v,h),t); },
-      explain:H.eq(H.fmtF(t)+' − '+H.fmtF(h)+' = '+H.ans(H.fmtF(left)+' miles')) }; }
-  };
-}
-
-/* ================= 7.2  Sets of numbers ================= */
-function G_nums(H){
-  var R=H.R, NAMES=['Natural numbers','Whole numbers','Integers','Rational numbers'];
-  /* 0 natural, 1 whole (only 0), 2 integer, 3 rational */
-  function cls(r){ if(r.d!==1) return 3; if(r.n>0) return 0; if(r.n===0) return 1; return 2; }
-  /* a number of a given class, with the way it is written; some are disguised (18/3, −12/4) */
-  function make(c){ var r, html, note='';
-    if(c===0){ var n=H.ri(1,40); if(H.chance(0.3)){ var d=H.pick([2,3,4,5]); r=R(n); html=H.frac(n*d,d); note=H.frac(n*d,d)+' = '+n; } else { r=R(n); html=''+n; } }
-    else if(c===1){ r=R(0); html=H.chance(0.3)? H.frac(0,H.pick([3,5,7])) : '0'; if(html!=='0') note=html+' = 0'; }
-    else if(c===2){ var m=-H.ri(1,40); r=R(m); if(H.chance(0.3)){ var d2=H.pick([2,3,4]); html=H.MINUS+H.frac(-m*d2,d2); note=html+' = '+H.num(m); } else html=H.num(m); }
-    else { var t=H.ri(0,3);
-      if(t===0){ var dd=H.pick([3,4,5,7,8]), nn=H.ri(1,dd*3); if(nn%dd===0) nn++; r=R(nn,dd); if(r.d===1) return null; if(H.chance(0.5)) r=H.neg(r); html=H.fmtF(r,true); }
-      else if(t===1){ var k=H.nz(-99,99); if(k%10===0) return null; r=R(k,10); html=H.decStr(r); }
-      else if(t===2){ var w=H.ri(1,9); r=H.add(R(w),R(1,H.pick([2,4]))); r=H.chance(0.5)?H.neg(r):r; html=H.fmtF(r); }
-      else { var dig=H.ri(1,8); r=R(dig,9); html='0.'+dig+dig+dig+'…'; note=html+' repeats, and it equals '+H.frac(dig,9); } }
-    return {r:r,html:html,note:note}; }
-  function why(chosen,truth){
-    if(chosen<truth) return [ 'Natural numbers are the counting numbers 1, 2, 3, …', 'Whole numbers are 0, 1, 2, 3, … No negatives, no fractions.', 'Integers have no fractions or decimals.' ][chosen];
-    return 'It is '+(truth===2?'an integer':truth===1?'a whole number':'a natural number')+' too, and that set is smaller. Pick the smallest set.'; }
-  var Q={
-  numClassify:function(){ var c=H.pick([0,0,1,2,2,3,3,3]), x=make(c); if(!x) return null;
-    var ch=[H.C(NAMES[c],c)]; [0,1,2,3].forEach(function(i){ if(i!==c) ch.push(H.C(NAMES[i],i,why(i,c))); });
-    return { prompt:'What is the <b>smallest</b> set that '+H.big(x.html)+' belongs to?', choices:ch, keepOrder:true, order:function(v){ return v; },
-      check:function(v){ return v===cls(x.r); }, explain:(x.note?H.eq(x.note)+'. ':'')+'It belongs to '+H.ans(NAMES[c])+'.' }; },
-  numFind:function(){ var T=H.ri(0,3), spec;
-    if(T===0) spec={ ask:'an integer but <b>not</b> a whole number', ok:function(c){ return c===2; }, want:2, others:[[0,'Positive integers are whole numbers.'],[1,'0 is a whole number.'],[3,'Integers have no fractions or decimals.']] };
-    else if(T===1) spec={ ask:'a rational number but <b>not</b> an integer', ok:function(c){ return c===3; }, want:3, others:[[2,'That is an integer.'],[0,'That is an integer.'],[1,'0 is an integer.']] };
-    else if(T===2) spec={ ask:'a whole number but <b>not</b> a natural number', ok:function(c){ return c===1; }, want:1, others:[[0,'That is a counting (natural) number.'],[2,'Whole numbers have no negatives.'],[3,'Whole numbers have no fractions or decimals.']] };
-    else spec={ ask:'<b>not</b> a whole number', ok:function(c){ return c>=2; }, want:H.pick([2,3]), others:[[1,'0 is a whole number.'],[0,'Counting numbers are whole numbers.'],[0,'Check: it simplifies to a counting number.']] };
-    var a=make(spec.want); if(!a) return null; var ch=[H.C(a.html,a.r)], used={}; used[a.html]=1;
-    for(var i=0;i<spec.others.length;i++){ var o=spec.others[i], b=null, tries=0; do{ b=make(o[0]); tries++; }while((!b||used[b.html]||ch.some(function(c){ return H.eqR(c.val,b.r); }))&&tries<20);
-      if(!b) return null; if(T===3&&i===2){ var n=H.ri(2,9), d=H.pick([2,3,4]); b={r:R(n),html:H.frac(n*d,d),note:''}; if(used[b.html]) return null; }
-      used[b.html]=1; ch.push(H.C(b.html,b.r,(b.note&&o[0]!==3? H.eq(b.note)+'. ' : '')+o[1])); }
-    return { prompt:'Which number is '+spec.ask+'?', choices:ch, check:function(v){ return spec.ok(cls(v)); },
-      explain:H.ans(a.html)+' is '+(cls(a.r)===2?'an integer below 0':cls(a.r)===3?'a fraction or decimal that is not an integer':cls(a.r)===1?'0: whole, but not a counting number':'')+'.' }; },
-  numVenn:function(){ var c=H.ri(0,3), C=H.COL;
-    var box=[[10,10,360,360,'Rational numbers',C.v],[30,56,320,304,'Integers',C.c],[50,102,280,248,'Whole numbers',C.g],[70,148,240,192,'Natural numbers',C.y]], s='';
-    box.forEach(function(b){ s+='<rect x="'+b[0]+'" y="'+b[1]+'" width="'+b[2]+'" height="'+b[3]+'" rx="22" fill="'+b[5]+'" fill-opacity="0.10" stroke="'+b[5]+'" stroke-width="3"/>'+H.t(b[0]+14,b[1]+31,b[4],21,b[5],'start'); });
-    var star=c===3?[328,40]:c===2?[312,86]:c===1?[296,132]:[190,262];
-    s+=H.t(star[0],star[1]+14,'★',40,'#FFFFFF');
-    var nums=[0,1,2,3].map(function(k){ return make(k); }); if(nums.some(function(n){ return !n; })) return null;
-    var whyS=['That is a natural number. It goes in the middle.','0 goes in the whole numbers ring.','Negative integers go in the integers ring.','Fractions and decimals go in the outer ring.'];
-    var ch=[H.C(nums[c].html,nums[c].r)]; [0,1,2,3].forEach(function(k){ if(k!==c) ch.push(H.C(nums[k].html,nums[k].r,(nums[k].note?H.eq(nums[k].note)+'. ':'')+whyS[k])); });
-    return { prompt:'Which number belongs where the ★ is?', visual:H.svg(s,'Nested sets of numbers'), choices:ch,
-      check:function(v){ return cls(v)===c; }, explain:'The ★ is in '+H.ans(NAMES[c])+(c<3?' (but not a smaller ring)':' but outside the integers')+': '+nums[c].html+'.' }; }
-  };
-  return Q;
-}
-
-/* ================= 7.4A–C  Rates and proportionality ================= */
-function G_rate(H){
-  var R=H.R, C=H.COL;
-  /* first-quadrant graph, 0..10 on x; y step chosen so the line fits */
-  function qGraph(step,lines,dots,xl,yl){ var o=46, S=310, u=S/10, X=function(x){ return o+x*u; }, Y=function(y){ return 380-o-(y/step)*u; }, s='';
-    for(var i=0;i<=10;i++){ s+=H.line(X(i),Y(0),X(i),Y(10*step),C.grid,2)+H.line(X(0),Y(i*step),X(10),Y(i*step),C.grid,2); }
-    s+=H.line(X(0),Y(0),X(10),Y(0),C.axis,3)+H.line(X(0),Y(0),X(0),Y(10*step),C.axis,3);
-    for(i=2;i<=10;i+=2){ s+=H.t(X(i),Y(0)+24,''+i,17,C.mute)+H.t(X(0)-8,Y(i*step)+6,H.num(i*step),17,C.mute,'end'); }
-    s+=H.t(X(0)-8,Y(0)+24,'0',17,C.mute,'end');
-    lines.forEach(function(L){ var x2=10, y2=L.f(10); if(y2>10*step){ x2=(10*step-L.b)/L.m; y2=10*step; } if(y2<0){ x2=(0-L.b)/L.m; y2=0; }
-      s+=H.line(X(0),Y(L.b),X(x2),Y(y2),L.col||C.c,5); });
-    (dots||[]).forEach(function(p){ s+='<circle cx="'+X(p[0]).toFixed(1)+'" cy="'+Y(p[1]).toFixed(1)+'" r="8" fill="'+C.y+'" stroke="#0E1016" stroke-width="3"/>'; });
-    if(xl) s+=H.tb(X(10)-2,Y(0)-10,xl,17,C.axis,'end');
-    if(yl) s+=H.tb(X(0)+10,Y(10*step)+18,yl,17,C.axis,'start');
-    return s; }
-  var CTX=[ {a:'miles',b:'hours',rate:'miles per hour',lo:35,hi:75,tlo:2,thi:6,verb:function(A,B){ return 'A car travels '+A+' miles in '+B+' hours.'; }},
-    {a:'words',b:'minutes',rate:'words per minute',lo:25,hi:70,tlo:3,thi:9,verb:function(A,B){ return 'Maya types '+A+' words in '+B+' minutes.'; }},
-    {a:'pages',b:'days',rate:'pages per day',lo:12,hi:45,tlo:3,thi:8,verb:function(A,B){ return 'Diego reads '+A+' pages in '+B+' days.'; }},
-    {a:'gallons',b:'minutes',rate:'gallons per minute',lo:4,hi:15,tlo:6,thi:12,verb:function(A,B){ return 'A hose fills '+A+' gallons in '+B+' minutes.'; }} ];
-  return {
-  rateUnit:function(){ var c=H.pick(CTX), r=H.ri(c.lo,c.hi), t=H.ri(c.tlo,c.thi), A=r*t;
-    function f(v){ return H.fmtD(v)+' '+c.rate; }
-    var cands=[[R(A*t),'You multiplied. Divide '+c.a+' by '+c.b+'.'],[R(A+t),'You added. Divide '+c.a+' by '+c.b+'.'],[R(A-t),'You subtracted. Divide '+c.a+' by '+c.b+'.'],[R(r+t),'Check the division: '+A+' ÷ '+t+'.']];
-    return { prompt:c.verb(A,t)+' What is the unit rate?', choices:H.choices(H.C(f(R(r)),R(r)),cands,f), check:function(v){ return H.eqR(H.mul(v,R(t)),R(A)); },
-      explain:H.eq(A+' ÷ '+t+' = '+H.ans(f(R(r)))) }; },
-  rateComplex:function(){ var T=H.pick([
-      {a:'mile',as:'miles',b:'hour',bs:'hours',rate:'miles per hour',say:function(A,B){ return 'Ana walks '+A+' mile in '+B+' hour.'; }},
-      {a:'wall',as:'walls',b:'hour',bs:'hours',rate:'walls per hour',say:function(A,B){ return 'Sam paints '+A+' of a wall in '+B+' hour.'; }},
-      {a:'cup',as:'cups',b:'batch',bs:'batches',rate:'cups per batch',say:function(A,B){ return 'Lily uses '+A+' cup of flour for '+B+' of a batch.'; }} ]);
-    var A=H.pick([R(1,2),R(3,4),R(2,3),R(1,3),R(3,8),R(5,6)]), B=H.pick([R(1,4),R(1,2),R(1,3),R(2,3),R(3,4),R(1,6)]); if(H.eqR(A,B)) return null; var u=H.div(A,B);
-    if(u.d>4) return null;
-    function f(v){ return H.fmtF(v)+' '+T.rate; }
-    var cands=[[H.mul(A,B),'Unit rate means divide: '+H.fmtFt(A)+' ÷ '+H.fmtFt(B)+'.'],[H.div(B,A),'That’s '+T.bs+' per '+T.a+'. Divide '+T.as+' by '+T.bs+'.'],[H.add(A,B),'Unit rate means divide, not add.']];
-    return { prompt:T.say(H.fmtF(A),H.fmtF(B))+' What is the unit rate?', choices:H.choices(H.C(f(u),u),cands,f), check:function(v){ return H.eqR(H.mul(v,B),A); },
-      explain:'Divide: '+H.eq(H.fmtF(A)+' ÷ '+H.fmtF(B)+' = '+H.fmtF(A)+' × '+H.fmtF(H.div(R(1),B))+' = '+H.ans(H.fmtF(u)))+'.' }; },
-  rateBest:function(){ var sizes=H.shuffle([6,8,10,12,16,18,20,24,32]).slice(0,4), us=H.shuffle([12,14,15,16,18,20,22,24,25,28,30]).slice(0,4);
-    var item=H.pick(['cereal','juice','shampoo','salsa','peanut butter','dog food']), unit=item==='juice'||item==='shampoo'?'fl oz':'oz';
-    var opts=sizes.map(function(s,i){ return {s:s,p:s*us[i]}; }), best=0; opts.forEach(function(o,i){ if(o.p*opts[best].s<opts[best].p*o.s) best=i; });
-    var bigIdx=0; opts.forEach(function(o,i){ if(o.s>opts[bigIdx].s) bigIdx=i; }); if(bigIdx===best&&H.chance(0.6)) return null;      /* biggest isn't always best */
-    function lab(o){ return o.s+' '+unit+' for '+H.money(o.p); }
-    var ch=[H.C(lab(opts[best]),{s:opts[best].s,p:opts[best].p})]; opts.forEach(function(o,i){ if(i!==best) ch.push(H.C(lab(o),{s:o.s,p:o.p},'That costs '+(o.p/o.s)+'¢ per '+unit+'. Compare cost ÷ size.')); });
-    return { prompt:'Which size of '+item+' is the best buy?', choices:ch,
-      check:function(v){ return opts.every(function(o){ return o.s===v.s&&o.p===v.p || v.p*o.s<o.p*v.s; }); },
-      explain:'Price ÷ size: '+H.money(opts[best].p)+' ÷ '+opts[best].s+' = '+H.ans((opts[best].p/opts[best].s)+'¢ per '+unit)+', the lowest.' }; },
-  rateKTable:function(){ var k=H.pick([R(2),R(3),R(4),R(5),R(6),R(8),R(1,2),R(3,2),R(5,2),R(1,4),R(3,4)]), step=H.pick([1,2,3]), x0=H.pick([1,2,3]);
-    var xs=[0,1,2,3].map(function(i){ return x0+i*step; }), ys=xs.map(function(x){ return H.mul(k,R(x)); }); if(ys.some(function(y){ return H.decStr(y)===null; })) return null;
-    function f(v){ return H.fmtF(v); }
-    var cands=[[H.div(R(1),k),'That’s x ÷ y. The constant k = y ÷ x.'],[H.mul(k,R(step)),'That’s how much y changes when x goes up '+step+'. Find y ÷ x.'],[ys[0],'That’s a y-value. Divide y by x.'],[H.add(k,R(1)),'Check: y ÷ x for any row.']];
-    var visual=H.svg(H.table(['x','y'],xs.map(function(x,i){ return [''+x,H.decStr(ys[i])]; })),'Table of x and y');
-    return { prompt:'The table shows a proportional relationship. What is the constant of proportionality (k)?', visual:visual,
-      choices:H.choices(H.C(f(k),k),cands,f,function(v){ return v.n>0; }), check:function(v){ return xs.every(function(x,i){ return H.eqR(H.mul(v,R(x)),ys[i]); }); },
-      explain:'k = y ÷ x: '+H.eq(H.decStr(ys[0])+' ÷ '+xs[0]+' = '+H.ans(f(k)))+'.' }; },
-  rateKGraph:function(){ var k=H.pick([R(1),R(2),R(3),R(1,2),R(3,2),R(5,2),R(4),R(5)]), step=H.val(k)>2?(H.val(k)>3?5:2):1;
-    var px=k.d===1? H.ri(2,Math.floor(10*step/H.val(k))) : 2*H.ri(1,Math.floor(10*step/H.val(k)/2)); if(px<1||px>10) return null; var py=H.val(k)*px; if(py>10*step||py%step!==0) return null;
-    var ctx=H.pick([['Hours','Dollars earned'],['Gallons','Miles'],['Minutes','Laps'],['Pounds','Cost ($)']]);
-    var vis=H.svg(qGraph(step,[{m:H.val(k),b:0,f:function(x){ return H.val(k)*x; }}],[[0,0],[px,py]],ctx[0],ctx[1]),'Graph of a line through the origin');
-    function f(v){ return H.fmtF(v); }
-    var cands=[[H.div(R(1),k),'That’s x ÷ y. Use y ÷ x.'],[R(py),'That’s the y-value of the point. Divide it by x.'],[R(px),'That’s the x-value of the point. Find y ÷ x.'],[H.add(k,R(1)),'Pick a point and find y ÷ x.']];
-    return { prompt:'What is the constant of proportionality for the graph?', visual:vis, choices:H.choices(H.C(f(k),k),cands,f), check:function(v){ return H.eqR(H.mul(v,R(px)),R(py)); },
-      explain:'The point ('+px+', '+py+'): '+H.eq(py+' ÷ '+px+' = '+H.ans(f(k)))+'.' }; },
-  rateEq:function(){ var words=H.chance(0.5), k=words? H.D(H.pick([1.25,2.5,7.5,0.75,12,8.5,3.25,15])) : H.pick([R(2),R(3),R(5),R(1,2),R(3,2),R(4),R(5,2)]), ks=H.decStr(k)||H.fmtF(k), kinv=H.div(R(1),k);
-    var pts=[[2,H.val(k)*2],[4,H.val(k)*4],[6,H.val(k)*6]], prompt, vis='';
-    if(words){ var c=H.pick([['Apples cost $'+H.fixed(Math.round(H.val(k)*100),2)+' per pound.','cost','pounds'],['A worker earns $'+H.fixed(Math.round(H.val(k)*100),2)+' per hour.','pay','hours']]);
-      if(H.val(k)>=10) return null; prompt=c[0]+' Which equation shows the '+c[1]+' y for x '+c[2]+'?'; }
-    else { prompt='Which equation represents the table?'; vis=H.svg(H.table(['x','y'],pts.concat([[8,H.val(k)*8]]).map(function(p){ return [''+p[0],H.decStr(H.D(p[1]))]; })),'Table of x and y'); }
-    function lab(v){ return v.t==='mul'? 'y = '+(v.k.d===1&&v.k.n===1?'':(H.decStr(v.k)||H.fmtF(v.k)))+'x' : v.t==='add'? 'y = x + '+(H.decStr(v.k)||H.fmtF(v.k)) : 'x = '+(H.decStr(v.k)||H.fmtF(v.k))+'y'; }
-    var right={t:'mul',k:k};
-    var ch=[H.C(lab(right),right),H.C(lab({t:'add',k:k}),{t:'add',k:k},'A proportional relationship multiplies: y = kx.'),H.C(lab({t:'inv',k:k}),{t:'inv',k:k},'x and y are switched. y = kx.')];
-    var dinv=H.decStr(kinv); ch.push(H.C(lab({t:'mul',k:kinv}),{t:'mul',k:kinv},'That’s x ÷ y. k = y ÷ x.'));
-    if(dinv===null&&kinv.d>8) return null;
-    return { prompt:prompt, visual:vis, choices:ch,
-      check:function(v){ return pts.every(function(p){ var x=R(p[0]), y=H.D(p[1]); return v.t==='mul'? H.eqR(H.mul(v.k,x),y) : v.t==='add'? H.eqR(H.add(x,v.k),y) : H.eqR(H.mul(v.k,y),x); }); },
-      explain:'k = y ÷ x = '+ks+', so '+H.ans(lab(right))+'.' }; }
-  };
-}
-
-/* ================= 7.4D  Percents ================= */
-function G_pct(H){
-  var R=H.R, M=H.money;
-  function P(v){ return H.fmtD(v)+'%'; }
-  return {
-  pctOf:function(){ var p=H.pick([5,10,15,20,25,30,35,40,45,60,75,80,12,8]), n=H.pick([20,40,60,80,120,150,200,240,300,50,90,160]), a=R(p*n,100); if(H.decStr(a)===null||a.d>10) return null;
-    var cands=[[H.mul(a,R(10)),'Percent means out of 100: '+p+'% = '+H.decStr(R(p,100))+'.'],[H.sub(R(n),a),'That’s what is left after taking away '+p+'%.'],[R(n-p),p+'% of '+n+' means '+H.decStr(R(p,100))+' × '+n+', not '+n+' − '+p+'.'],[H.div(a,R(10)),'Percent means out of 100: '+p+'% = '+H.decStr(R(p,100))+'.']];
-    return { prompt:'What is '+H.big(p+'% of '+n)+'?', choices:H.choices(H.C(H.decStr(a),a),cands,H.fmtD), check:function(v){ return H.eqR(H.mul(v,R(100)),R(p*n)); },
-      explain:H.eq(H.decStr(R(p,100))+' × '+n+' = '+H.ans(H.decStr(a))) }; },
-  pctWhole:function(){ var p=H.pick([10,20,25,40,50,75,30,60,15]), w=H.pick([40,60,80,120,200,160,240,300]), part=R(p*w,100); if(part.d!==1) return null;
-    var cands=[[H.mul(part,R(p,100)),'That finds '+p+'% of '+part.n+'. Here '+part.n+' is the part; find the whole.'],[R(w-part.n),'That’s the rest, not the whole.'],[H.div(H.mul(part,R(100)),R(100-p)),'Use '+p+'% in the proportion, not '+(100-p)+'%.'],[R(part.n+p),'Set up part ÷ whole = '+p+' ÷ 100.']];
-    return { prompt:H.big(part.n+' is '+p+'% of what number?'), choices:H.choices(H.C(''+w,R(w)),cands,H.fmtD,function(v){ return H.decStr(v)!==null; }),
-      check:function(v){ return H.eqR(H.mul(v,R(p,100)),part); }, explain:H.eq(part.n+' ÷ '+H.decStr(R(p,100))+' = '+H.ans(''+w)) }; },
-  pctChange:function(){ var o=H.pick([20,25,40,50,60,80,120,150,200,250]), p=H.pick([10,15,20,25,30,40,50,60,75]), up=H.chance(0.5); var ch=o*p/100; if(ch%1!==0) return null; var n=up?o+ch:o-ch;
-    var cands=[[H.div(R(ch*100),R(n)),'Divide the change by the <b>original</b> amount ('+M(o*100)+'), not the new one.'],[R(ch),'That’s the change in dollars. Divide it by the original.'],[R(up?100+p:100-p),'That’s the new price as a percent of the old. Find the change.'],[R(p+10),'Find the change, then divide by the original.']];
-    return { prompt:'A price went from '+M(o*100)+' to '+M(n*100)+'. What is the percent '+(up?'increase':'decrease')+'?',
-      choices:H.choices(H.C(p+'%',R(p)),cands,P,function(v){ return H.decStr(v)!==null&&v.d<=10; }), check:function(v){ return H.eqR(H.mul(v,R(o)),R(ch*100)); },
-      explain:'Change ÷ original: '+H.eq(ch+' ÷ '+o+' = '+H.ans(p+'%'))+'.' }; },
-  pctApply:function(){ var o=H.pick([400,1200,2400,800,1500,3000,250,600]), p=H.pick([5,10,15,20,25,4,8]), up=H.chance(0.6), ch=o*p/100; if(ch%1!==0) return null; var n=up?o+ch:o-ch;
-    var ctx=up? H.pick([['A town has '+H.num(o)+' people. The population grows '+p+'%. What is the new population?','people'],['A school had '+H.num(o)+' books. The library adds '+p+'% more. How many books now?','books']])
-              : H.pick([['A lake had '+H.num(o)+' fish. The number dropped '+p+'%. How many fish now?','fish'],['A game had '+H.num(o)+' players. Players dropped '+p+'%. How many players now?','players']]);
-    function f(v){ return H.num(v)+' '+ctx[1]; }
-    var cands=[[ch,'That’s the change. '+(up?'Add it to':'Subtract it from')+' '+H.num(o)+'.'],[up?o-ch:o+ch,up?'It grows, so add.':'It drops, so subtract.'],[up?o+p:o-p,'Find '+p+'% of '+H.num(o)+' first.']];
-    return { prompt:ctx[0], choices:H.choices(H.C(f(n),n),cands,f), check:function(v){ return (v-o)*100===(up?1:-1)*p*o; },
-      explain:H.eq(H.num(o)+(up?' + ':' − ')+H.decStr(R(p,100))+' × '+H.num(o)+' = '+H.ans(f(n))) }; },
-  pctDisc:function(){ var d=H.pick([10,15,20,25,30,40,50,60,35]), P0=H.pick([20,24,36,40,48,60,80,90,120,45,64])*100, off=P0*d/100; if(off%5!==0) return null; var sale=P0-off;
-    var item=H.pick(['jacket','pair of shoes','video game','backpack','skateboard','headset']);
-    var cands=[[off,'That’s how much you save. Subtract it from the price.'],[P0+off,'A discount lowers the price.'],[P0-d*100,'Take '+d+'% of the price, not $'+d+'.'],[P0*d/1000,'Percent means out of 100.']];
-    return { prompt:'A '+M(P0)+' '+item+' is '+d+'% off. What is the sale price?', choices:H.choices(H.C(M(sale),sale),cands,M,function(v){ return Number.isInteger(v)&&v>0; }),
-      check:function(v){ return v*100===P0*(100-d); }, explain:'Pay '+(100-d)+'%: '+H.eq(H.decStr(R(100-d,100))+' × '+M(P0)+' = '+H.ans(M(sale)))+'.' }; },
-  pctMarkup:function(){ var c=H.pick([20,24,30,40,50,60,80,12,16])*100, m=H.pick([20,25,40,50,30,75,60]), up=c*m/100; if(up%5!==0) return null; var s=c+up;
-    var cands=[[up,'That’s only the markup. Add it to the cost.'],[c-up,'A markup raises the price.'],[c+m*100,'Take '+m+'% of the cost, not $'+m+'.']];
-    return { prompt:'A store pays '+M(c)+' for a hoodie and marks it up '+m+'%. What is the selling price?', choices:H.choices(H.C(M(s),s),cands,M,function(v){ return v>0; }),
-      check:function(v){ return v*100===c*(100+m); }, explain:'Charge '+(100+m)+'%: '+H.eq(H.decStr(R(100+m,100))+' × '+M(c)+' = '+H.ans(M(s)))+'.' }; },
-  pctDeal:function(){ var P0=H.pick([40,60,80,120,50,100,90])*100;
-    var deals=[ {t:'$'+H.pick([10,12,15,18,20])+' off', s:function(t){ return +t.slice(1,t.indexOf(' '))*100; }},
-      {t:H.pick([10,15,20,25,30])+'% off', s:function(t){ return P0*parseInt(t,10)/100; }},
-      {t:H.pick(['1/4','1/5','1/3','1/2'])+' off', s:function(t){ var a=t.split(' ')[0].split('/'); return P0*(+a[0])/(+a[1]); }},
-      {t:'Pay '+H.pick([70,75,80,85,90])+'% of the price', s:function(t){ return P0*(100-parseInt(t.slice(4),10))/100; }} ];
-    var sv=deals.map(function(d){ return d.s(d.t); }); if(sv.some(function(v){ return v%1!==0; })) return null; var best=0; sv.forEach(function(v,i){ if(v>sv[best]) best=i; });
-    if(sv.filter(function(v){ return v===sv[best]; }).length>1) return null;
-    var ch=[H.C(deals[best].t,{i:best})]; deals.forEach(function(d,i){ if(i!==best) ch.push(H.C(d.t,{i:i},'That saves '+M(sv[i])+'. Another deal saves more.')); });
-    return { prompt:'Which deal saves the most on a '+M(P0)+' item?', choices:ch, check:function(v){ return sv.every(function(x){ return x<=sv[v.i]; }); },
-      explain:H.ans(deals[best].t)+' saves '+M(sv[best])+', the most.' }; },
-  pctTax:function(){ var P0=H.ri(3,30)*400, tax=P0*825/10000, tot=P0+tax;
-    var item=H.pick(['bike','phone','pair of jeans','lamp','soccer ball','backpack']);
-    var cands=[[tax,'That’s just the tax. Add it to the price.'],[P0+825,'8.25% of the price is not $8.25.'],[P0+P0*825/1000,'8.25% = 0.0825. Count the decimal places.'],[P0-tax,'Sales tax adds to the price.']];
-    return { prompt:'In Texas the sales tax is 8.25%. What is the total cost of a '+M(P0)+' '+item+'?', choices:H.choices(H.C(M(tot),tot),cands,M,function(v){ return Number.isInteger(v)&&v>0; }),
-      check:function(v){ return v*10000===P0*10825; }, explain:'Tax: '+H.eq('0.0825 × '+M(P0)+' = '+M(tax))+'. Total: '+H.ans(M(tot))+'.' }; },
-  pctTip:function(){ var p=H.pick([15,18,20]), m=H.ri(12,60)*100+H.pick([0,50]), tip=m*p/100; if(tip%1!==0) return null; var tot=m+tip;
-    var cands=[[tip,'That’s just the tip. Add it to the bill.'],[m+p*100,p+'% of the bill is not $'+p+'.'],[m-tip,'A tip adds to the bill.'],[m+tip*10,'Percent means out of 100: '+p+'% = '+H.decStr(R(p,100))+'.']];
-    return { prompt:'Dinner costs '+M(m)+'. You leave a '+p+'% tip. What is the total?', choices:H.choices(H.C(M(tot),tot),cands,M,function(v){ return Number.isInteger(v)&&v>0; }),
-      check:function(v){ return v*100===m*(100+p); }, explain:'Tip: '+H.eq(H.decStr(R(p,100))+' × '+M(m)+' = '+M(tip))+'. Total: '+H.ans(M(tot))+'.' }; }
-  };
-}
-
-/* ================= 7.4E  Measurement conversions ================= */
-function G_conv(H){
-  var R=H.R;
-  var U={ in:['inch','inches'], ft:['foot','feet'], yd:['yard','yards'], mi:['mile','miles'], oz:['ounce','ounces'], lb:['pound','pounds'], T:['ton','tons'],
-    floz:['fluid ounce','fluid ounces'], c:['cup','cups'], pt:['pint','pints'], qt:['quart','quarts'], gal:['gallon','gallons'],
-    mm:['millimeter','millimeters'], cm:['centimeter','centimeters'], m:['meter','meters'], km:['kilometer','kilometers'], mg:['milligram','milligrams'], g:['gram','grams'], kg:['kilogram','kilograms'], mL:['milliliter','milliliters'], L:['liter','liters'] };
-  /* [big, small, how many small in one big] */
-  var LEN=[['ft','in',12],['yd','ft',3],['yd','in',36],['mi','ft',5280],['mi','yd',1760]];
-  var WC=[['lb','oz',16],['T','lb',2000],['c','floz',8],['pt','c',2],['qt','pt',2],['gal','qt',4],['qt','c',4]];
-  var MET=[['cm','mm',10],['m','cm',100],['km','m',1000],['g','mg',1000],['kg','g',1000],['L','mL',1000],['m','mm',1000]];
-  var NICE=[R(1,2),R(1,4),R(3,4),R(3,2),R(5,2),R(2),R(3),R(4),R(5),R(6),R(9,2),R(7,2),R(8),R(7,4),R(10)];
-  var NICEM=NICE.concat([R(32,10),R(45,100),R(125,10),R(6,10),R(275,100),R(15,10)]);
-  function nm(u,v){ return H.eqR(v,R(1))? U[u][0] : U[u][1]; }
-  function mk(list,metric){ return function(){ var c=H.pick(list), big=c[0], sm=c[1], f=c[2], down=H.chance(0.5), a=H.pick(metric?NICEM:NICE);
-    if(c[2]>=1760&&!H.eqR(a,R(1,2))&&!H.eqR(a,R(1,4))&&!H.eqR(a,R(1))&&!H.eqR(a,R(3,4))&&!H.eqR(a,R(2))&&!H.eqR(a,R(3,2))) return null;
-    /* down: big → small (multiply). up: small → big (divide). a is always the number of big units */
-    var smallN=H.mul(a,R(f)), give=down?a:smallN, ans=down?smallN:a, from=down?big:sm, to=down?sm:big;
-    if(smallN.d!==1&&!metric) return null; if(H.decStr(give)===null||H.decStr(ans)===null) return null;
-    var wrongF=metric? (f===10?100:10) : (f===12?10:f===3?12:f===16?10:f===2?4:f===4?2:f===8?16:f===36?12:f===2000?1000:f===5280?1000:f===1760?3:10);
-    var cands=[[down?H.div(give,R(f)):H.mul(give,R(f)), down?'Big units to small units: there are more of them, so multiply by '+H.num(f)+'.':'Small units to big units: there are fewer of them, so divide by '+H.num(f)+'.'],
-      [down?H.mul(give,R(wrongF)):H.div(give,R(wrongF)),'1 '+U[big][0]+' = '+H.num(f)+' '+U[sm][1]+'.']];
-    if(metric) cands.push([H.mul(ans,R(10)),'Count the zeros: 1 '+U[big][0]+' = '+H.num(f)+' '+U[sm][1]+'.'],[H.div(ans,R(10)),'Count the zeros: 1 '+U[big][0]+' = '+H.num(f)+' '+U[sm][1]+'.']);
-    else cands.push([down?H.add(give,R(f)):H.sub(give,R(f)),'Multiply or divide by '+H.num(f)+'. Don’t add or subtract.'],[H.mul(ans,R(2)),'Check: 1 '+U[big][0]+' = '+H.num(f)+' '+U[sm][1]+'.']);
-    function fm(v){ return H.decStr(v)===null? null : H.decStr(v)+' '+nm(to,v); }
-    return { prompt:H.big(H.decStr(give)+' '+(H.eqR(give,R(1))?U[from][0]:U[from][1]))+' = how many '+U[to][1]+'?',
-      choices:H.choices(H.C(fm(ans),ans),cands,fm,function(v){ return v.n>0&&H.decStr(v)!==null; }),
-      check:function(v){ return down? H.eqR(H.div(v,R(f)),give) : H.eqR(H.mul(v,R(f)),give); },
-      explain:'1 '+U[big][0]+' = '+H.num(f)+' '+U[sm][1]+'. '+H.eq(H.decStr(give)+(down?' × ':' ÷ ')+H.num(f)+' = '+H.ans(H.decStr(ans)+' '+nm(to,ans)))+'.' }; }; }
-  return { convLen:mk(LEN,false), convWC:mk(WC,false), convMet:mk(MET,true) };
-}
-
-/* ================= 7.5A, 7.5C  Scale drawings and similar figures ================= */
-function G_scale(H){
-  var R=H.R, C=H.COL;
-  function F(v){ return H.fmtD(v); }
-  /* two similar shapes side by side; s = [w,h] small, k = scale factor; unknown 'w' or 'h' on the big one */
-  function drawPair(kind,s,k,unknown,unit){ var w1=s[0],h1=s[1],w2=H.val(k)*w1,h2=H.val(k)*h1, sc=Math.min(150/Math.max(w1,w2*0.62), 230/Math.max(h1,h2), 230/w2*0.95), o='';
-    var a=[30,320], b=[30+w1*sc+50,320]; if(b[0]+w2*sc>365){ sc=sc*(335-30-50)/((w1+w2)*sc); b=[30+w1*sc+50,320]; }
-    function shape(p,w,h,col){ return kind==='rect'? H.poly([[p[0],p[1]],[p[0]+w*sc,p[1]],[p[0]+w*sc,p[1]-h*sc],[p[0],p[1]-h*sc]],col+'22',col,4) : H.poly([[p[0],p[1]],[p[0]+w*sc,p[1]],[p[0],p[1]-h*sc]],col+'22',col,4); }
-    o+=shape(a,w1,h1,C.c)+shape(b,w2,h2,C.p);
-    o+=H.tb(a[0]+w1*sc/2,a[1]+28,F(R(w1))+' '+unit,20)+H.tb(a[0]-8,a[1]-h1*sc/2+7,F(R(h1)),20,C.ink,'end');
-    o+=H.tb(b[0]+w2*sc/2,b[1]+28,(unknown==='w'?'x':F(H.mul(k,R(w1))))+' '+unit,20,unknown==='w'?C.y:C.ink)+H.tb(b[0]-8,b[1]-h2*sc/2+7,unknown==='h'?'x':F(H.mul(k,R(h1))),20,unknown==='h'?C.y:C.ink,'end');
-    o+=H.t(a[0]+w1*sc/2,a[1]-h1*sc-12,'A',22,C.c)+H.t(b[0]+w2*sc/2,b[1]-h2*sc-12,'B',22,C.p);
-    return H.svg(o,'Two similar figures'); }
-  return {
-  scaleActual:function(){ var a=H.pick([R(1),R(1),R(2),R(1,2),R(1,4)]), b=H.pick([5,8,10,12,15,20,25,40,50]), unitA=H.pick(['inch','cm']), unitB=unitA==='inch'?H.pick(['miles','feet']):H.pick(['km','meters']);
-    var m=H.pick([R(3),R(5,2),R(7,2),R(9,2),R(6),R(3,2),R(5),R(15,4),R(8)]); var act=H.mul(H.div(m,a),R(b)); if(H.decStr(act)===null) return null;
-    var sa=(H.fmtF(a))+' '+(H.val(a)<=1?unitA:(unitA==='inch'?'inches':'cm')), map=H.decStr(m)+' '+(unitA==='inch'?'inches':'cm');
-    function f(v){ return H.decStr(v)===null? null : H.decStr(v)+' '+unitB; }
-    var cands=[[H.add(m,R(b)),'Use the scale as a ratio. Don’t add.'],[H.mul(m,R(b)),H.eqR(a,R(1))?'Check: '+H.decStr(m)+' × '+b+'.':'First find what 1 '+unitA+' stands for: '+b+' ÷ '+H.decStr(a)+'.'],[H.div(R(b),m),'Divide the other way: map length ÷ scale length, then × '+b+'.'],[H.mul(act,R(10)),'Check the decimal point.']];
-    return { prompt:'On a map, '+sa+' = '+b+' '+unitB+'. Two towns are '+map+' apart on the map. What is the real distance?',
-      choices:H.choices(H.C(f(act),act),cands,f,function(v){ return v.n>0; }), check:function(v){ return H.eqR(H.mul(v,a),H.mul(m,R(b))); },
-      explain:H.eq(H.decStr(m)+' ÷ '+H.decStr(a)+' × '+b+' = '+H.ans(f(act)))+'.' }; },
-  scaleDraw:function(){ var b=H.pick([2,4,5,8,10]), act=H.pick([R(12),R(14),R(18),R(20),R(24),R(30),R(36),R(40),R(15),R(22)]), d=H.div(act,R(b)); if(H.decStr(d)===null) return null;
-    var room=H.pick(['A classroom','A garden','A basketball court','A kitchen','A bedroom']);
-    function f(v){ return H.decStr(v)===null? null : H.decStr(v)+' in'; }
-    var cands=[[H.mul(act,R(b)),'A drawing is smaller than the real thing. Divide by '+b+'.'],[H.sub(act,R(b)),'Use the scale as a ratio. Don’t subtract.'],[R(act.n/10),'Use the scale: 1 inch = '+b+' feet.'],[H.add(d,R(1)),'Check: '+H.decStr(act)+' ÷ '+b+'.']];
-    return { prompt:'A scale drawing uses 1 inch = '+b+' feet. '+room+' is '+H.decStr(act)+' feet long. How long is it on the drawing?',
-      choices:H.choices(H.C(f(d),d),cands,f,function(v){ return v.n>0; }), check:function(v){ return H.eqR(H.mul(v,R(b)),act); },
-      explain:H.eq(H.decStr(act)+' ÷ '+b+' = '+H.ans(f(d)))+'.' }; },
-  scaleSimilar:function(){ var kind=H.pick(['rect','tri']), w=H.ri(2,8), h=H.ri(2,8); if(w===h) return null; var k=H.pick([R(2),R(3),R(3,2),R(5,2),R(4),R(5,4)]), unknown=H.pick(['w','h']);
-    var x=H.mul(k,R(unknown==='w'?w:h)), other=unknown==='w'?h:w, otherBig=H.mul(k,R(other)), sameS=unknown==='w'?w:h; if(H.decStr(x)===null||H.decStr(otherBig)===null) return null;
-    var unit=H.pick(['cm','in','ft','m']);
-    function f(v){ return H.decStr(v)===null? null : H.decStr(v)+' '+unit; }
-    var cands=[[H.add(R(sameS),H.sub(otherBig,R(other))),'Similar figures multiply by a scale factor. They don’t add the same amount.'],[H.div(H.mul(R(sameS),R(other)),otherBig),'Match the sides: small to small, big to big. Then multiply by the scale factor.'],[H.mul(otherBig,R(sameS)),'Set up a ratio of matching sides.'],[H.add(x,R(2)),'Scale factor = '+H.decStr(otherBig)+' ÷ '+other+'.']];
-    return { prompt:(kind==='rect'?'Rectangle':'Triangle')+' A is similar to '+(kind==='rect'?'rectangle':'triangle')+' B. What is x?', visual:drawPair(kind,[w,h],k,unknown,unit),
-      choices:H.choices(H.C(f(x),x),cands,f,function(v){ return v.n>0&&H.decStr(v)!==null; }), check:function(v){ return H.eqR(H.mul(v,R(other)),H.mul(otherBig,R(sameS))); },
-      explain:'Scale factor: '+H.eq(H.decStr(otherBig)+' ÷ '+other+' = '+H.decStr(k))+'. So x = '+H.eq(sameS+' × '+H.decStr(k)+' = '+H.ans(f(x)))+'.' }; },
-  scaleFactor:function(){ var a=H.ri(3,12), k=H.pick([R(2),R(3),R(3,2),R(5,2),R(1,2),R(4),R(1,3),R(2,3)]), b=H.mul(R(a),k); if(b.d!==1||b.n===a) return null;
-    var nm=H.pick([['ABC','DEF','AB','DE'],['PQR','XYZ','PQ','XY'],['JKL','MNO','JK','MN']]);
-    var cands=[[H.div(R(1),k),'That’s from '+nm[1]+' to '+nm[0]+'. Divide the new side by the original side.'],[R(Math.abs(b.n-a)),'A scale factor multiplies. It is not the difference.'],[R(a+b.n),'Divide the new side by the original side.'],[R(a*b.n),'Divide the new side by the original side.']];
-    return { prompt:'Triangle '+nm[0]+' is similar to triangle '+nm[1]+'. '+nm[2]+' = '+a+' and '+nm[3]+' = '+b.n+'. What is the scale factor from '+nm[0]+' to '+nm[1]+'?',
-      choices:H.choices(H.C(H.fmtF(k),k),cands,H.fmtF,function(v){ return v.n>0; }), check:function(v){ return H.eqR(H.mul(v,R(a)),b); },
-      explain:'New ÷ original: '+H.eq(b.n+' ÷ '+a+' = '+H.ans(H.fmtF(k)))+'.' }; }
-  };
-}
-
-/* ================= 7.5B, 7.9B  Circles (π ≈ 3.14) =================
-   Lengths and areas are kept in hundredths as whole numbers, so 3.14 × 5 × 5 = 78.5 is exact. */
-function G_circ(H){
-  var R=H.R, C=H.COL;
-  function hu(n){ return H.fixed(n,2,true); }
-  function circle(label,useD,extra){ var s='<circle cx="190" cy="190" r="140" fill="'+C.c+'1A" stroke="'+C.c+'" stroke-width="5"/><circle cx="190" cy="190" r="6" fill="'+C.ink+'"/>';
-    if(useD===true) s+=H.line(50,190,330,190,C.y,5)+H.tb(190,178,label,28,C.y);
-    else if(useD===false) s+=H.line(190,190,330,190,C.y,5)+H.tb(260,178,label,28,C.y);
-    if(extra) s+=H.tb(190,90,extra,28,C.p);
-    return H.svg(s,'A circle'); }
-  return {
-  circC:function(){ var r=H.ri(2,15), useD=H.chance(0.5), d=2*r, unit=H.pick(['cm','in','ft','m']), C100=314*d;
-    function f(v){ return hu(v)+' '+unit; }
-    var cands=[[314*r,useD?'C = πd. Use the whole diameter, '+d+'.':'C = πd = 2πr. Double the radius first: d = '+d+'.'],[314*r*r,'That’s the area (πr²). Circumference is the distance around.'],[314*d*2,'C = πd. Don’t double the diameter.'],[314*d+100,'Multiply: 3.14 × '+d+'.']];
-    return { prompt:'Find the circumference. Use 3.14 for π.', visual:circle((useD?'d = ':'r = ')+(useD?d:r)+' '+unit,useD),
-      choices:H.choices(H.C(f(C100),C100),cands,f), check:function(v){ return v*1===314*(r+r); },
-      explain:'C = πd: '+H.eq('3.14 × '+d+' = '+H.ans(f(C100)))+'.' }; },
-  circA:function(){ var r=H.ri(2,12), useD=H.chance(0.5), d=2*r, unit=H.pick(['cm','in','ft','m']), A100=314*r*r;
-    function f(v){ return hu(v)+' '+unit+'²'; }
-    var cands=[[314*d*d,'Use the radius: r = '+d+' ÷ 2 = '+r+'.'],[314*d,'That’s the circumference. Area is πr².'],[314*r,'Square the radius: r² = '+r+' × '+r+'.'],[314*r*2,'r² means '+r+' × '+r+', not '+r+' × 2.']];
-    if(!useD) cands.shift();
-    return { prompt:'Find the area. Use 3.14 for π.', visual:circle((useD?'d = ':'r = ')+(useD?d:r)+' '+unit,useD),
-      choices:H.choices(H.C(f(A100),A100),cands,f), check:function(v){ var rr=0; for(var i=0;i<r;i++) rr+=r; return v===314*rr; },
-      explain:(useD?'r = '+r+'. ':'')+'A = πr²: '+H.eq('3.14 × '+r+' × '+r+' = '+H.ans(f(A100)))+'.' }; },
-  circBack:function(){ var unit=H.pick(['cm','in','ft','m']);
-    if(H.chance(0.55)){ var d=H.ri(2,30), C100=314*d, askR=H.chance(0.4)&&d%2===0, ans=askR?d/2:d;
-      function f(v){ return H.decStr(R(v,100))===null?null:H.decStr(R(v,100))+' '+unit; }
-      var cands=[[askR?d*100:d*50,askR?'That’s the diameter. The radius is half of it.':'That’s the radius. The diameter is twice as long.'],[Math.round(C100*314/100),'Divide by 3.14, don’t multiply.'],[C100/2,'Divide the circumference by 3.14.'],[(ans+1)*100,'Check: 3.14 × '+(ans+1)+(askR?' × 2':'')+' ≠ '+hu(C100)+'.']];
-      return { prompt:'A circle has a circumference of '+hu(C100)+' '+unit+'. What is its '+(askR?'radius':'diameter')+'? Use 3.14 for π.', visual:circle('',null,'C = '+hu(C100)+' '+unit),
-        choices:H.choices(H.C(f(ans*100),ans*100),cands,f,function(v){ return v>0; }), check:function(v){ return 314*(askR?2*v:v)===C100*100; },
-        explain:'d = C ÷ π: '+H.eq(hu(C100)+' ÷ 3.14 = '+d)+(askR?', so r = '+H.ans(f(ans*100)):' = '+H.ans(f(ans*100)))+'.' }; }
-    var r=H.ri(2,10), A100=314*r*r;
-    function g(v){ return H.decStr(R(v,100))===null?null:H.decStr(R(v,100))+' '+unit; }
-    var c2=[[r*r*100,'That’s r². Now find the number that times itself makes '+(r*r)+'.'],[2*r*100,'That’s the diameter. The question asks for the radius.'],[Math.round(A100/2/3.14)*1,'Area is πr². Divide by 3.14, then take the square root.'],[(r+1)*100,'Check: 3.14 × '+(r+1)+' × '+(r+1)+' is too big.']];
-    return { prompt:'A circle has an area of '+hu(A100)+' '+unit+'². What is its radius? Use 3.14 for π.', visual:circle('',null,'A = '+hu(A100)+' '+unit+'²'),
-      choices:H.choices(H.C(g(r*100),r*100),c2,g,function(v){ return v>0; }), check:function(v){ return v%100===0&&314*(v/100)*(v/100)===A100; },
-      explain:H.eq(hu(A100)+' ÷ 3.14 = '+(r*r))+', and '+H.eq(r+' × '+r+' = '+(r*r))+', so r = '+H.ans(g(r*100))+'.' }; }
-  };
-}
-
-/* ================= 7.8, 7.9A, 7.9C, 7.9D  Area, volume and surface area ================= */
-function G_geo(H){
-  var R=H.R, C=H.COL;
-  /* a box: l across, w into the page, h up */
-  function box(l,w,h,labels){ var dx=0.55, dy=0.4, sc=Math.min(250/(l+w*dx), 230/(h+w*dy)), x0=(380-(l+w*dx)*sc)/2, y0=380-(380-(h+w*dy)*sc)/2-10;
-    var A=[x0,y0], B=[x0+l*sc,y0], Cc=[x0+l*sc,y0-h*sc], D=[x0,y0-h*sc], ox=w*dx*sc, oy=-w*dy*sc;
-    function o(p){ return [p[0]+ox,p[1]+oy]; }
-    var s=H.poly([D,Cc,o(Cc),o(D)],C.c+'26',C.c,3)+H.poly([B,o(B),o(Cc),Cc],C.c+'14',C.c,3)+H.poly([A,B,Cc,D],C.c+'33',C.c,4);
-    s+=H.line(A[0]+ox,A[1]+oy,o(B)[0],o(B)[1],C.c,2,'6 6')+H.line(A[0]+ox,A[1]+oy,o(D)[0],o(D)[1],C.c,2,'6 6')+H.line(A[0],A[1],A[0]+ox,A[1]+oy,C.c,2,'6 6');
-    s+=H.tb((A[0]+B[0])/2,A[1]+30,labels[0],24)+H.tb(A[0]-10,(A[1]+D[1])/2+8,labels[2],24,C.ink,'end')+H.tb((B[0]+o(B)[0])/2+14,(B[1]+o(B)[1])/2+18,labels[1],24,C.ink,'start');
-    return H.svg(s,'Rectangular prism'); }
-  function triPrism(b,th,L,labels){ var dx=0.6, dy=0.35, sc=Math.min(240/(b+L*dx), 220/(th+L*dy)), x0=(380-(b+L*dx)*sc)/2, y0=380-(380-(th+L*dy)*sc)/2-12;
-    var A=[x0,y0], B=[x0+b*sc,y0], T=[x0,y0-th*sc], ox=L*dx*sc, oy=-L*dy*sc; function o(p){ return [p[0]+ox,p[1]+oy]; }
-    var s=H.poly([T,B,o(B),o(T)],C.g+'1A',C.g,3)+H.poly([A,B,T],C.g+'33',C.g,4)+H.line(T[0],T[1],o(T)[0],o(T)[1],C.g,3)+H.line(A[0],A[1],o(A)[0],o(A)[1],C.g,2,'6 6')+H.line(o(A)[0],o(A)[1],o(B)[0],o(B)[1],C.g,2,'6 6')+H.line(o(A)[0],o(A)[1],o(T)[0],o(T)[1],C.g,2,'6 6');
-    s+='<rect x="'+A[0]+'" y="'+(A[1]-16)+'" width="16" height="16" fill="none" stroke="'+C.g+'" stroke-width="2"/>';
-    s+=H.tb((A[0]+B[0])/2,A[1]+30,labels[0],24)+H.tb(A[0]-10,(A[1]+T[1])/2+8,labels[1],24,C.ink,'end')+H.tb((B[0]+o(B)[0])/2+14,(B[1]+o(B)[1])/2+18,labels[2],24,C.ink,'start');
-    return H.svg(s,'Triangular prism'); }
-  function pyramid(l,w,h,labels){ var dx=0.55, dy=0.4, sc=Math.min(250/(l+w*dx), 220/(h+w*dy*0.5)), x0=(380-(l+w*dx)*sc)/2, y0=330;
-    var A=[x0,y0], B=[x0+l*sc,y0], ox=w*dx*sc, oy=-w*dy*sc, Bb=[B[0]+ox,B[1]+oy], Ab=[A[0]+ox,A[1]+oy], M=[(A[0]+Bb[0])/2,(A[1]+Bb[1])/2], P=[M[0],M[1]-h*sc];
-    if(P[1]<20){ return null; }
-    var s=H.poly([A,B,Bb,Ab],C.o+'1A','none')+H.line(A[0],A[1],B[0],B[1],C.o,4)+H.line(B[0],B[1],Bb[0],Bb[1],C.o,4)+H.line(A[0],A[1],Ab[0],Ab[1],C.o,2,'6 6')+H.line(Ab[0],Ab[1],Bb[0],Bb[1],C.o,2,'6 6');
-    s+=H.poly([A,B,P],C.o+'26',C.o,4)+H.poly([B,Bb,P],C.o+'14',C.o,4)+H.line(Ab[0],Ab[1],P[0],P[1],C.o,2,'6 6')+H.line(P[0],P[1],M[0],M[1],C.y,3,'6 6');
-    s+=H.tb((A[0]+B[0])/2,A[1]+30,labels[0],24)+H.tb((B[0]+Bb[0])/2+14,(B[1]+Bb[1])/2+18,labels[1],24,C.ink,'start')+H.tb(M[0]+10,(M[1]+P[1])/2+10,labels[2],24,C.y,'start');
-    return H.svg(s,'Rectangular pyramid'); }
-  function U(u,p){ return u+(p?'³':'²'); }
-  return {
-  geoPrism:function(){ var unit=H.pick(['cm','in','ft','m']);
-    if(H.chance(0.6)){ var l=H.ri(2,12), w=H.ri(2,9), h=H.ri(2,10), V=l*w*h, SA=2*(l*w+l*h+w*h);
-      function f(v){ return H.num(v)+' '+U(unit,1); }
-      var cands=[[l*w,'That’s the base area B. V = Bh: multiply by the height too.'],[SA,'That’s the surface area. Volume is B × h.'],[l+w+h,'Multiply the dimensions, don’t add them.'],[V+l*w,'Check: '+l+' × '+w+' × '+h+'.']];
-      return { prompt:'What is the volume of the rectangular prism?', visual:box(l,w,h,[l+' '+unit,w+' '+unit,h+' '+unit]),
-        choices:H.choices(H.C(f(V),V),cands,f), check:function(v){ return v/h===l*w&&v%h===0; }, explain:'V = Bh = '+H.eq(l+' × '+w+' × '+h+' = '+H.ans(f(V)))+'.' }; }
-    var b=H.ri(3,10), th=H.ri(3,9), L=H.ri(4,12); if((b*th)%2) return null; var B=b*th/2, V2=B*L;
-    function g(v){ return H.num(v)+' '+U(unit,1); }
-    var c2=[[b*th*L,'The base is a triangle: B = ½ × '+b+' × '+th+' = '+B+'.'],[B,'That’s the base area. Multiply by the length, '+L+'.'],[b+th+L,'Find B = ½bh, then multiply by '+L+'.'],[B*L+B,'Check: '+B+' × '+L+'.']];
-    return { prompt:'What is the volume of the triangular prism?', visual:triPrism(b,th,L,[b+' '+unit,th+' '+unit,L+' '+unit]),
-      choices:H.choices(H.C(g(V2),V2),c2,g), check:function(v){ return 2*v===b*th*L; }, explain:'B = ½ × '+b+' × '+th+' = '+B+'. '+H.eq('V = '+B+' × '+L+' = '+H.ans(g(V2)))+'.' }; },
-  geoPyr:function(){ var unit=H.pick(['cm','in','ft','m']);
-    if(H.chance(0.35)){ var Vp=H.ri(4,40)*6, py=Vp/3;
-      var c0=[[Vp*3,'A pyramid holds less than the prism. Divide by 3.'],[Vp/2,'Use ⅓, not ½.'],[Vp,'Same base and height, but a pyramid is ⅓ of the prism.'],[Vp-3,'Divide by 3.']];
-      function f0(v){ return H.num(v)+' '+U(unit,1); }
-      return { prompt:'A prism and a pyramid have the same base and the same height. The prism’s volume is '+H.num(Vp)+' '+U(unit,1)+'. What is the pyramid’s volume?',
-        choices:H.choices(H.C(f0(py),py),c0,f0,function(v){ return Number.isInteger(v)&&v>0; }), check:function(v){ return 3*v===Vp; }, explain:'A pyramid is ⅓ of the prism: '+H.eq(H.num(Vp)+' ÷ 3 = '+H.ans(f0(py)))+'.' }; }
-    var l=H.ri(3,12), w=H.ri(3,10), h=H.ri(3,12); if((l*w*h)%3) return null; var V=l*w*h/3, vis=pyramid(l,w,h,[l+' '+unit,w+' '+unit,h+' '+unit]); if(!vis) return null;
-    function f(v){ return H.num(v)+' '+U(unit,1); }
-    var cands=[[l*w*h,'That’s a prism. A pyramid is ⅓ of it.'],[l*w*h/2,'Use ⅓, not ½.'],[l*w,'That’s the base area B. V = ⅓Bh.'],[V+l*w,'Check: ⅓ × '+l+' × '+w+' × '+h+'.']];
-    return { prompt:'What is the volume of the rectangular pyramid?', visual:vis, choices:H.choices(H.C(f(V),V),cands,f,function(v){ return Number.isInteger(v)&&v>0; }),
-      check:function(v){ return 3*v===l*w*h; }, explain:'V = ⅓Bh = '+H.eq('⅓ × '+l+' × '+w+' × '+h+' = '+H.ans(f(V)))+'.' }; },
-  geoComp:function(){ var unit=H.pick(['cm','in','ft','m']), t=H.ri(0,2), s='', ans, cands, explain, X;
-    if(t===0){ /* L shape: W × Ht with a w × h corner cut from the top right */
-      var W=H.ri(8,14), Ht=H.ri(7,12), w=H.ri(3,W-3), h=H.ri(3,Ht-3); var sc=Math.min(250/W,270/Ht), x0=70+(250-W*sc)/2, y0=(380+Ht*sc)/2;
-      X=function(x){ return x0+x*sc; }; var Y=function(y){ return y0-y*sc; };
-      s=H.poly([[X(0),Y(0)],[X(W),Y(0)],[X(W),Y(Ht-h)],[X(W-w),Y(Ht-h)],[X(W-w),Y(Ht)],[X(0),Y(Ht)]],C.v+'2A',C.v,4);
-      s+=H.tb(X(W/2),Y(0)+30,W+' '+unit,22)+H.tb(X(0)-10,Y(Ht/2)+8,Ht+' '+unit,22,C.ink,'end')+H.tb(X((W-w)/2),Y(Ht)-12,(W-w)+'',22)+H.tb(X(W)+10,Y((Ht-h)/2)+8,(Ht-h)+'',22,C.ink,'start')+H.tb(X(W-w/2),Y(Ht-h)-12,w+'',22)+H.tb(X(W-w)+10,Y(Ht-h/2)+8,h+'',22,C.ink,'start');
-      ans=R(W*Ht-w*h); cands=[[R(W*Ht),'Subtract the missing corner: '+w+' × '+h+'.'],[R(2*(W+Ht)),'That’s the perimeter (distance around). Area counts square units inside.'],[R(W*Ht+w*h),'The corner is missing, so subtract it.'],[R(W*(Ht-h)+(W-w)*Ht),'Those two rectangles overlap. Split the shape so they don’t.']];
-      explain=H.eq(W+' × '+Ht+' − '+w+' × '+h+' = '+H.ans(H.num(ans.n)+' '+U(unit))); }
-    else if(t===1){ /* house: rectangle W × Ht plus triangle on top (base W, height th) */
-      var W2=H.ri(6,12), Ht2=H.ri(4,9), th=H.ri(3,7); if((W2*th)%2) return null; var sc2=Math.min(250/W2,280/(Ht2+th)), x02=70+(250-W2*sc2)/2, y02=(380+(Ht2+th)*sc2)/2;
-      var X2=function(x){ return x02+x*sc2; }, Y2=function(y){ return y02-y*sc2; };
-      s=H.poly([[X2(0),Y2(0)],[X2(W2),Y2(0)],[X2(W2),Y2(Ht2)],[X2(W2/2),Y2(Ht2+th)],[X2(0),Y2(Ht2)]],C.v+'2A',C.v,4)+H.line(X2(0),Y2(Ht2),X2(W2),Y2(Ht2),C.v,2,'6 6')+H.line(X2(W2/2),Y2(Ht2),X2(W2/2),Y2(Ht2+th),C.y,3,'6 6');
-      s+=H.tb(X2(W2/2),Y2(0)+30,W2+' '+unit,22)+H.tb(X2(0)-10,Y2(Ht2/2)+8,Ht2+' '+unit,22,C.ink,'end')+H.tb(X2(W2/2)+10,Y2(Ht2+th/2)+12,th+' '+unit,22,C.y,'start');
-      ans=R(W2*Ht2+W2*th/2); cands=[[R(W2*Ht2+W2*th),'Triangle area is ½ × base × height.'],[R(W2*Ht2),'Add the triangle on top.'],[R(W2*(Ht2+th)),'The top is a triangle, not a rectangle: ½ × '+W2+' × '+th+'.'],[R(W2*Ht2+th),'Find the triangle’s area: ½ × '+W2+' × '+th+'.']];
-      explain=H.eq(W2+' × '+Ht2+' + ½ × '+W2+' × '+th+' = '+H.ans(H.num(ans.n)+' '+U(unit))); }
-    else { /* rectangle W × Ht with a semicircle on the right (diameter Ht) */
-      var Ht3=H.pick([2,4,6,8,10]), W3=H.ri(5,12), r=Ht3/2; var sc3=Math.min(260/(W3+r),260/Ht3), x03=70+(260-(W3+r)*sc3)/2, y03=(380+Ht3*sc3)/2;
-      var X3=function(x){ return x03+x*sc3; }, Y3=function(y){ return y03-y*sc3; };
-      s='<path d="M'+X3(0)+' '+Y3(0)+' L'+X3(W3)+' '+Y3(0)+' A'+(r*sc3)+' '+(r*sc3)+' 0 0 0 '+X3(W3)+' '+Y3(Ht3)+' L'+X3(0)+' '+Y3(Ht3)+' Z" fill="'+C.v+'2A" stroke="'+C.v+'" stroke-width="4"/>'+H.line(X3(W3),Y3(0),X3(W3),Y3(Ht3),C.v,2,'6 6');
-      s+=H.tb(X3(W3/2),Y3(0)+30,W3+' '+unit,22)+H.tb(X3(0)-10,Y3(Ht3/2)+8,Ht3+' '+unit,22,C.ink,'end');
-      var A100=W3*Ht3*100+157*r*r; ans=R(A100,100);
-      cands=[[R(W3*Ht3*100+314*r*r,100),'Half a circle: ½ × 3.14 × '+r+' × '+r+'.'],[R(W3*Ht3*100+157*Ht3*Ht3,100),'Use the radius: '+Ht3+' ÷ 2 = '+r+'.'],[R(W3*Ht3),'Add the half circle.'],[R(W3*Ht3*100+157*Ht3,100),'Half-circle area is ½πr².']];
-      explain=H.eq(W3+' × '+Ht3+' + ½ × 3.14 × '+r+'² = '+H.ans(H.decStr(ans)+' '+U(unit)))+'. Use 3.14 for π.'; }
-    function f(v){ return H.decStr(v)+' '+U(unit); }
-    var chk=ans; return { prompt:'What is the area of the composite figure?'+(t===2?' Use 3.14 for π.':''), visual:H.svg(s,'Composite figure'), choices:H.choices(H.C(f(ans),ans),cands,f),
-      check:function(v){ return H.eqR(v,chk); }, explain:explain }; },
-  geoSA:function(){ var l=H.ri(2,10), w=H.ri(2,8), h=H.ri(2,9), unit=H.pick(['cm','in','ft','m']), lat=H.chance(0.4), LA=2*h*(l+w), TA=LA+2*l*w, ans=lat?LA:TA;
-    function f(v){ return H.num(v)+' '+U(unit); }
-    var cands=[[lat?TA:LA,lat?'Lateral area leaves out the top and bottom.':'Total surface area includes the top and bottom: add 2 × '+l+' × '+w+'.'],[l*w*h,'That’s the volume. Surface area adds the areas of the faces.'],[TA/2,'Each face has a matching face on the other side. Count both.'],[lat?h*(l+w):LA+l*w,lat?'There are 4 side faces: 2 of '+l+' × '+h+' and 2 of '+w+' × '+h+'.':'There are two bases (top and bottom).']];
-    return { prompt:'What is the '+(lat?'<b>lateral</b>':'<b>total</b>')+' surface area of the prism?', visual:box(l,w,h,[l+' '+unit,w+' '+unit,h+' '+unit]),
-      choices:H.choices(H.C(f(ans),ans),cands,f), check:function(v){ var faces=[l*h,l*h,w*h,w*h].concat(lat?[]:[l*w,l*w]); return v===faces.reduce(function(a,b){ return a+b; },0); },
-      explain:lat? 'Sides: '+H.eq('2('+l+' × '+h+') + 2('+w+' × '+h+') = '+H.ans(f(ans)))+'.' : H.eq('2('+l+'×'+w+' + '+l+'×'+h+' + '+w+'×'+h+') = '+H.ans(f(ans)))+'.' }; }
-  };
-}
-
-/* ================= 7.10, 7.11A, 7.11B  Equations and inequalities ================= */
-function G_eqin(H){
-  var R=H.R, C=H.COL, MI=H.MINUS;
-  function cx(a,v){ return a===1? v : a===-1? MI+v : H.num(a)+v; }
-  function sg(b){ return b>0? ' + '+b : b<0? ' '+MI+' '+(-b) : ''; }
-  var OPS=['<','≤','>','≥'];
-  function holds(op,l,r){ return op==='<'? l<r : op==='≤'? l<=r : op==='>'? l>r : l>=r; }
-  function flip(op){ return {'<':'>','>':'<','≤':'≥','≥':'≤'}[op]; }
-  function swapStrict(op){ return {'<':'≤','≤':'<','>':'≥','≥':'>'}[op]; }
-  function esc(op){ return op==='<'?'&lt;':op==='>'?'&gt;':op; }
-  function sol(v){ return 'x '+esc(v.op)+' '+H.fmtF(v.k); }
-  /* number line from k−5 to k+5 */
-  function numberLine(k,op){ var lo=k-5, x=function(t){ return 30+(t-lo)*32; }, y=200, s='', closed=op==='≤'||op==='≥', right=op==='>'||op==='≥';
-    s+=H.line(14,y,366,y,C.axis,3)+H.poly([[366,y],[352,y-8],[352,y+8]],C.axis)+H.poly([[14,y],[28,y-8],[28,y+8]],C.axis);
-    for(var t=lo;t<=lo+10;t++){ s+=H.line(x(t),y-9,x(t),y+9,C.axis,2)+H.t(x(t),y+38,H.num(t),17,t===k?C.y:C.mute); }
-    s+=H.line(x(k),y,right?350:30,y,C.c,8)+H.poly(right?[[364,y],[344,y-13],[344,y+13]]:[[16,y],[36,y-13],[36,y+13]],C.c);
-    s+='<circle cx="'+x(k)+'" cy="'+y+'" r="11" fill="'+(closed?C.c:'#12151D')+'" stroke="'+C.c+'" stroke-width="4"/>';
-    return H.svg(s,'Number line graph'); }
-  return {
-  eqSolve:function(){ var f=H.pick(['ax+b','ax+b','x/a+b','a(x+b)']), x=H.nz(-12,12), a=H.nz(-9,9), b=H.nz(-15,15), lhs, c, cands=[], steps;
-    if(Math.abs(a)===1) return null;
-    if(f==='ax+b'){ c=a*x+b; lhs=cx(a,'x')+sg(b); steps=H.eq((b>0?'Subtract '+b:'Add '+(-b))+': '+cx(a,'x')+' = '+H.num(c-b))+', then divide by '+H.num(a);
-      cands=[[R(c+b,a),'Undo '+(b>0?'+ '+b+' by subtracting':MI+' '+(-b)+' by adding')+' '+Math.abs(b)+'.'],[H.sub(R(c,a),R(b)),'Undo the '+(b>0?'adding':'subtracting')+' first, then divide.'],[R(-x),'Check the sign.'],[R((c-b)*a),'Undo × '+H.num(a)+' by dividing.']]; }
-    else if(f==='x/a+b'){ a=Math.abs(a); x=a*H.nz(-6,6); c=x/a+b; lhs=H.frac('x',a)+sg(b); steps=H.eq((b>0?'Subtract '+b:'Add '+(-b))+': '+H.frac('x',a)+' = '+H.num(c-b))+', then multiply by '+a;
-      cands=[[R(c-b,a),'Undo ÷ '+a+' by multiplying.'],[R(a*(c+b)),'Undo '+(b>0?'+ '+b+' by subtracting':MI+' '+(-b)+' by adding')+' '+Math.abs(b)+'.'],[R(a*c-b),'Undo the '+(b>0?'adding':'subtracting')+' first, then multiply.'],[R(-x),'Check the sign.']]; }
-    else { c=a*(x+b); lhs=H.num(a)+'(x'+sg(b)+')'; if(Math.abs(c)>150) return null; steps=H.eq('Divide by '+H.num(a)+': x'+sg(b)+' = '+H.num(c/a))+', then '+(b>0?'subtract '+b:'add '+(-b));
-      cands=[[R(c/a+b),'Undo '+(b>0?'+ '+b+' by subtracting':MI+' '+(-b)+' by adding')+' '+Math.abs(b)+'.'],[R(c-b,a),H.num(a)+' multiplies both x and '+H.num(b)+'. Divide by '+H.num(a)+' first.'],[R(-x),'Check the sign.'],[R(c-a*b+1),'Divide '+H.num(c)+' by '+H.num(a)+' first.']]; }
-    var ask=H.chance(0.3)? 'Which value of x makes '+H.big(lhs+' = '+H.num(c))+' true?' : 'Solve: '+H.big(lhs+' = '+H.num(c));
-    var right=R(x), ch=H.choices(H.C('x = '+H.fmtF(right),right),cands.filter(function(cd){ return cd[0].d===1; }).concat(cands.filter(function(cd){ return cd[0].d!==1; })),function(v){ return 'x = '+H.fmtF(v); });
-    function L(v){ return f==='ax+b'? H.add(H.mul(R(a),v),R(b)) : f==='x/a+b'? H.add(H.div(v,R(a)),R(b)) : H.mul(R(a),H.add(v,R(b))); }
-    return { prompt:ask, choices:ch, check:function(v){ return H.eqR(L(v),R(c)); },
-      explain:steps+': '+H.ans('x = '+x)+'. Check: put '+x+' back in.' }; },
-  ineqSolve:function(){ if(H.chance(0.3)){ /* which value is a solution? */
-      var a2=H.nz(-5,6), b2=H.nz(-12,12), k2=H.nz(-8,8), op2=H.pick(OPS); if(Math.abs(a2)===1) return null; var c2=a2*k2+b2, test=function(v){ return holds(op2,a2*v+b2,c2); };
-      var good=[], bad=[]; for(var t=k2-6;t<=k2+6;t++){ if(t===k2) continue; (test(t)?good:bad).push(t); } if(!good.length||bad.length<2) return null;
-      var g=H.pick(good), boundary=k2, ch=[H.C('x = '+H.num(g),g)];
-      if(!test(boundary)) ch.push(H.C('x = '+H.num(boundary),boundary,'At x = '+H.num(boundary)+' both sides are equal, but '+esc(op2)+' does not include equal.'));
-      H.shuffle(bad).forEach(function(bv){ if(ch.length<4) ch.push(H.C('x = '+H.num(bv),bv,'Check: '+H.num(a2)+'('+H.num(bv)+')'+sg(b2)+' = '+H.num(a2*bv+b2)+', which is not '+esc(op2)+' '+H.num(c2)+'.')); });
-      return { prompt:'Which value of x is a solution of '+H.big(cx(a2,'x')+sg(b2)+' '+esc(op2)+' '+H.num(c2))+'?', choices:ch, check:function(v){ return test(v); },
-        explain:'Put it in: '+H.eq(H.num(a2)+'('+H.num(g)+')'+sg(b2)+' = '+H.num(a2*g+b2))+', and '+H.num(a2*g+b2)+' '+esc(op2)+' '+H.num(c2)+' is true. '+H.ans('x = '+H.num(g))+'.' }; }
-    var a=H.chance(0.3)? -H.ri(2,6) : H.ri(2,8), b=H.nz(-15,15), k=H.nz(-9,9), op=H.pick(OPS), c=a*k+b, solOp=a<0?flip(op):op;
-    var right={op:solOp,k:R(k)}, wrongK=R(c+b,a), cands=[];
-    cands.push([{op:a<0?op:flip(op),k:R(k)}, a<0?'Dividing by a negative number flips the sign.':'You divided by a positive number, so the sign stays the same.']);
-    cands.push([{op:solOp,k:wrongK},'Undo '+(b>0?'+ '+b+' by subtracting':MI+' '+(-b)+' by adding')+' '+Math.abs(b)+'.']);
-    cands.push([{op:swapStrict(solOp),k:R(k)},op==='<'||op==='>'?'The sign is '+esc(op)+', so the answer can’t include equal to.':'The sign is '+op+', so the answer includes equal to.']);
-    cands.push([{op:solOp,k:R(-k)},'Check the sign of the number.']);
-    var ch=H.choices(H.C(sol(right),right),cands,sol);
-    function same(v){ if(!v||!v.op) return false; for(var t=-30;t<=30;t+=0.5){ if(holds(op,a*t+b,c)!==holds(v.op,t,H.val(v.k))) return false; } return true; }
-    return { prompt:'Solve: '+H.big(cx(a,'x')+sg(b)+' '+esc(op)+' '+H.num(c)), choices:ch, check:same,
-      explain:H.eq(cx(a,'x')+' '+esc(op)+' '+H.num(c-b))+(a<0?', divide by '+H.num(a)+' and flip: ':', divide by '+a+': ')+H.ans(sol(right))+'.' }; },
-  ineqLine:function(){ var k=H.nz(-6,6), op=H.pick(OPS), ch=[H.C('x '+esc(op)+' '+H.num(k),op)];
-    OPS.forEach(function(o){ if(o===op) return; var closedR=op==='≤'||op==='≥', closedO=o==='≤'||o==='≥', rightR=op==='>'||op==='≥', rightO=o==='>'||o==='≥';
-      ch.push(H.C('x '+esc(o)+' '+H.num(k),o, rightR!==rightO? 'The arrow points '+(rightR?'right, to bigger numbers':'left, to smaller numbers')+'.' : closedR?'The circle is filled in, so '+H.num(k)+' is included.':'The circle is open, so '+H.num(k)+' is not included.')); });
-    return { prompt:'Which inequality does the graph show?', visual:numberLine(k,op), choices:ch, check:function(v){ return v===op; },
-      explain:(op==='≤'||op==='≥'?'Closed circle: '+H.num(k)+' is included. ':'Open circle: '+H.num(k)+' is not included. ')+'Arrow '+(op==='>'||op==='≥'?'right':'left')+': '+H.ans('x '+esc(op)+' '+H.num(k))+'.' }; },
-  eqWrite:function(){ var T=H.ri(0,4), a, b, c, v, rel, text, form='lin';
-    if(T===0){ a=H.ri(5,15); b=H.ri(10,60); var w=H.ri(3,12); c=a*w+b; v='w'; rel='='; text='Sam has $'+b+' and saves $'+a+' each week. Which equation finds w, the number of weeks until he has $'+c+'?'; }
-    else if(T===1){ a=H.ri(15,45); b=H.ri(20,75); var m=H.ri(2,10); c=a*m+b; v='m'; rel='='; text='A gym charges a $'+b+' sign-up fee plus $'+a+' per month. Maria has paid $'+c+'. Which equation finds m, the number of months?'; }
-    else if(T===2){ a=H.ri(8,25); b=H.ri(5,20); c=H.ri(60,150); v='t'; rel='≤'; text='Concert tickets cost $'+a+' each, plus a $'+b+' parking fee. You can spend <b>at most</b> $'+c+'. Which inequality finds t, the number of tickets?'; }
-    else if(T===3){ a=H.ri(5,20); b=H.ri(10,80); c=b+a*H.ri(4,12)+H.ri(1,4); v='g'; rel='≥'; text='Kai has '+b+' points and earns '+a+' points each game. He needs <b>at least</b> '+c+' points. Which inequality finds g, the number of games?'; }
-    else { a=H.ri(3,6); b=H.ri(2,6); var x=H.ri(5,15); c=a*(x+b); v='x'; rel='='; form='dist'; text=a+' friends each buy a movie ticket for $x and a $'+b+' snack. They spend $'+c+' in all. Which equation finds x?'; }
-    function lab(q){ var L=q.f==='dist'? q.a+'('+v+(q.b<0?' − '+(-q.b):' + '+q.b)+')' : q.a+v+(q.b<0?' − '+(-q.b):' + '+q.b); return L+' '+q.rel+' '+q.c; }
-    /* a candidate's meaning: its relation and the boundary value of the variable */
-    function bound(q){ return q.f==='dist'? H.sub(R(q.c,q.a),R(q.b)) : R(q.c-q.b,q.a); }
-    var truth={f:form,a:a,b:b,c:c,rel:rel}, tb=bound(truth);
-    var cands=[[{f:form,a:b,b:a,c:c,rel:rel},form==='dist'?'Each friend pays the ticket plus the snack, so '+a+' multiplies both.':'The amount that repeats each '+(T===3?'game':T===2?'ticket':T===1?'month':'week')+' goes with the variable.'],
-      [{f:form,a:a,b:-b,c:c,rel:rel},'The $'+b+' adds to the total, so use +.'],
-      form==='dist'? [{f:'lin',a:a,b:b,c:c,rel:rel},'The snack is bought '+a+' times too: '+a+'('+v+' + '+b+').'] : [{f:'dist',a:a,b:b,c:c,rel:rel},'Only the repeating amount is multiplied by '+v+'.']];
-    if(rel!=='=') cands.unshift([{f:form,a:a,b:b,c:c,rel:rel==='≤'?'≥':'≤'},rel==='≤'?'“At most” means less than or equal to: ≤.':'“At least” means greater than or equal to: ≥.']);
-    return { prompt:text, choices:H.choices(H.C(lab(truth),truth),cands,lab), check:function(q){ return q.rel===rel&&H.eqR(bound(q),tb)&&(q.f===form||!H.eqR(bound(q),tb)); },
-      explain:H.ans(lab(truth))+'.' }; }
-  };
-}
-
-/* ================= 7.11C  Angle relationships ================= */
-function G_angle(H){
-  var C=H.COL, MI=H.MINUS, RAD=Math.PI/180;
-  function ex(a,b){ return (a===1?'':a)+'x'+(b>0?' + '+b:b<0?' − '+(-b):''); }
-  /* angle expression a·x + b that equals ang when x = X */
-  function expr(ang){ for(var t=0;t<40;t++){ var a=H.pick([1,2,2,3,3,4,5]), X=H.ri(3,30), b=ang-a*X; if(Math.abs(b)<=40&&b!==0) return {a:a,b:b,x:X}; } return null; }
-  function ray(cx,cy,deg,len,col){ return H.line(cx,cy,cx+len*Math.cos(deg*RAD),cy-len*Math.sin(deg*RAD),col||C.ink,4); }
-  function arc(cx,cy,d1,d2,r,col){ var a1=d1*RAD,a2=d2*RAD; return '<path d="M'+(cx+r*Math.cos(a1)).toFixed(1)+' '+(cy-r*Math.sin(a1)).toFixed(1)+' A'+r+' '+r+' 0 '+(d2-d1>180?1:0)+' 0 '+(cx+r*Math.cos(a2)).toFixed(1)+' '+(cy-r*Math.sin(a2)).toFixed(1)+'" fill="none" stroke="'+col+'" stroke-width="3"/>'; }
-  function lab(cx,cy,deg,r,s,col,size){ return H.tb(cx+r*Math.cos(deg*RAD),cy-r*Math.sin(deg*RAD)+8,s,size||22,col); }
-  function fix(cands,X,E){ var out=cands.filter(function(c){ return Number.isInteger(c[0])&&c[0]>0&&c[0]!==X; });
-    [2,-2,5,-5,1,-1].forEach(function(d){ var v=X+d; if(v>0) out.push([v,'Check: '+E.a+'('+v+')'+(E.b>0?' + '+E.b:' − '+(-E.b))+' = '+(E.a*v+E.b)+'°. That doesn’t work.']); }); return out; }
-  function finish(prompt,vis,X,E,cands,total,other){ var ch=H.choices(H.C('x = '+X,X),fix(cands,X,E),function(v){ return 'x = '+v; });
-    return { prompt:prompt, visual:vis, choices:ch, check:function(v){ return E.a*v+E.b+other===total; },
-      explain:H.eq(ex(E.a,E.b)+' + '+other+' = '+total)+', so '+(E.a===1? H.ans('x = '+X) : H.eq(E.a+'x = '+(total-other-E.b))+' and '+H.ans('x = '+X))+'.' }; }
-  return {
-  angComp:function(){ var p=H.ri(20,70), q=90-p, E=expr(p); if(!E) return null; var cx=70, cy=320, L=250;
-    var s=ray(cx,cy,0,L)+ray(cx,cy,90,L)+ray(cx,cy,p,L,C.c)+'<path d="M'+(cx+22)+' '+cy+' V'+(cy-22)+' H'+cx+'" fill="none" stroke="'+C.mute+'" stroke-width="3"/>';
-    s+=arc(cx,cy,0,p,70,C.y)+arc(cx,cy,p,90,95,C.p)+lab(cx,cy,p/2,125,ex(E.a,E.b)+'°',C.y)+lab(cx,cy,(p+90)/2,140,q+'°',C.p);
-    var cands=[[(180-q-E.b)/E.a,'The angles make a right angle: they add to 90°, not 180°.'],[p,'That’s the angle’s measure. The question asks for x.'],[(90-q+E.b)/E.a,'Undo '+(E.b>0?'+ '+E.b+' by subtracting':'− '+(-E.b)+' by adding')+'.']];
-    return finish('The angles are complementary. What is the value of x?',H.svg(s,'Complementary angles'),E.x,E,cands,90,q); },
-  angSupp:function(){ var p=H.ri(30,150), q=180-p, E=expr(p); if(!E) return null; var cx=190, cy=260;
-    var s=H.line(20,cy,360,cy,C.ink,4)+ray(cx,cy,p,170,C.c)+arc(cx,cy,0,p,48,C.y)+arc(cx,cy,p,180,64,C.p);
-    s+=lab(cx,cy,p/2,p<60?115:90,ex(E.a,E.b)+'°',C.y)+lab(cx,cy,(p+180)/2,q<60?120:100,q+'°',C.p);
-    var cands=[[(90-q-E.b)/E.a,'Angles on a straight line add to 180°, not 90°.'],[p,'That’s the angle’s measure. The question asks for x.'],[(180-q+E.b)/E.a,'Undo '+(E.b>0?'+ '+E.b+' by subtracting':'− '+(-E.b)+' by adding')+'.']];
-    return finish('The angles form a straight line. What is the value of x?',H.svg(s,'Supplementary angles'),E.x,E,cands,180,q); },
-  angVert:function(){ var p=H.ri(35,145), E=expr(p); if(!E) return null; var cx=190, cy=190, L=175, adj=H.chance(0.35);
-    var s=H.line(cx-L*Math.cos(p*RAD),cy+L*Math.sin(p*RAD),cx+L*Math.cos(p*RAD),cy-L*Math.sin(p*RAD),C.ink,4)+H.line(cx-L,cy,cx+L,cy,C.ink,4);
-    s+=arc(cx,cy,0,p,46,C.y)+lab(cx,cy,p/2,p<70?100:84,ex(E.a,E.b)+'°',C.y);
-    var shown=adj?180-p:p;
-    if(adj) s+=arc(cx,cy,p,180,58,C.p)+lab(cx,cy,(p+180)/2,(180-p)<70?110:92,shown+'°',C.p);
-    else s+=arc(cx,cy,180,180+p,46,C.p)+lab(cx,cy,180+p/2,p<70?100:84,shown+'°',C.p);
-    if(adj){ var c1=[[(shown-E.b)/E.a,'These angles are next to each other on a line, so they add to 180°. They aren’t equal.'],[p,'That’s the angle’s measure. The question asks for x.'],[(90-shown-E.b)/E.a,'Angles on a straight line add to 180°.']];
-      return finish('Two lines cross. What is the value of x?',H.svg(s,'Two intersecting lines'),E.x,E,c1,180,shown); }
-    var c2=[[(180-shown-E.b)/E.a,'Vertical angles are equal. They don’t add to 180°.'],[p,'That’s the angle’s measure. The question asks for x.'],[(shown+E.b)/E.a,'Undo '+(E.b>0?'+ '+E.b+' by subtracting':'− '+(-E.b)+' by adding')+'.']];
-    var ch=H.choices(H.C('x = '+E.x,E.x),fix(c2,E.x,E),function(v){ return 'x = '+v; });
-    return { prompt:'Two lines cross. What is the value of x?', visual:H.svg(s,'Vertical angles'), choices:ch, check:function(v){ return E.a*v+E.b===shown; },
-      explain:'Vertical angles are equal: '+H.eq(ex(E.a,E.b)+' = '+shown)+', so '+H.ans('x = '+E.x)+'.' }; },
-  angTri:function(){ var A=H.ri(30,90), B=H.ri(30,110), Cc=180-A-B; if(Cc<25) return null; var E=expr(Cc); if(!E) return null;
-    /* triangle with angle A at left, B at right, base horizontal */
-    var b=1, a=Math.sin(A*RAD)/Math.sin(Cc*RAD), cpx=a*Math.cos(B*RAD), x1=0, x2=b, x3=b-cpx, y3=a*Math.sin(B*RAD);
-    var minX=Math.min(x1,x3), maxX=Math.max(x2,x3), sc=Math.min(300/(maxX-minX),260/y3), ox=(380-(maxX-minX)*sc)/2-minX*sc, oy=320;
-    function P(x,y){ return [ox+x*sc,oy-y*sc]; } var p1=P(x1,0), p2=P(x2,0), p3=P(x3,y3);
-    var s=H.poly([p1,p2,p3],C.c+'1A',C.c,4);
-    function inside(p,q,r,s2,col){ var mx=(q[0]+r[0])/2-p[0], my=(q[1]+r[1])/2-p[1], d=Math.hypot(mx,my), k=Math.min(70,d*0.45); return H.tb(p[0]+mx/d*k,p[1]+my/d*k+8,s2,20,col); }
-    s+=inside(p1,p2,p3,A+'°',C.ink)+inside(p2,p1,p3,B+'°',C.ink)+inside(p3,p1,p2,ex(E.a,E.b)+'°',C.y);
-    var cands=[[(90-A-B-E.b)/E.a,'The angles of a triangle add to 180°.'],[Cc,'That’s the angle’s measure. The question asks for x.'],[(360-A-B-E.b)/E.a,'A triangle’s angles add to 180°, not 360°.'],[(180-A-B+E.b)/E.a,'Undo '+(E.b>0?'+ '+E.b+' by subtracting':'− '+(-E.b)+' by adding')+'.']];
-    return finish('What is the value of x in the triangle?',H.svg(s,'A triangle'),E.x,E,cands,180,A+B); }
-  };
-}
-
-/* ================= 7.6A, C, D, E, H, I  Probability ================= */
-function G_prob(H){
-  var R=H.R, C=H.COL;
-  var COLS=[['red',C.r],['blue',C.c],['green',C.g],['yellow',C.y],['purple',C.v]];
-  function F(v){ return H.fmtF(v,true); }
-  function jar(counts){ var s='<rect x="40" y="40" width="300" height="310" rx="34" fill="#1A2030" stroke="'+C.mute+'" stroke-width="4"/>', all=[];
-    counts.forEach(function(c,i){ for(var k=0;k<c;k++) all.push(i); }); H.shuffle(all);
-    var per=6, rr=20; all.forEach(function(ci,k){ var row=Math.floor(k/per), col=k%per; s+='<circle cx="'+(78+col*45+(row%2)*10)+'" cy="'+(320-row*42)+'" r="'+rr+'" fill="'+COLS[ci][1]+'" stroke="#0E1016" stroke-width="3"/>'; });
-    return H.svg(s,'A jar of marbles'); }
-  function spinner(sec){ var n=sec.length, s='', cx=190, cy=190, r=160;
-    sec.forEach(function(ci,i){ var a1=(i/n)*2*Math.PI-Math.PI/2, a2=((i+1)/n)*2*Math.PI-Math.PI/2;
-      s+='<path d="M'+cx+' '+cy+' L'+(cx+r*Math.cos(a1)).toFixed(1)+' '+(cy+r*Math.sin(a1)).toFixed(1)+' A'+r+' '+r+' 0 0 1 '+(cx+r*Math.cos(a2)).toFixed(1)+' '+(cy+r*Math.sin(a2)).toFixed(1)+' Z" fill="'+COLS[ci][1]+'" stroke="#0E1016" stroke-width="4"/>'; });
-    s+=H.line(cx,cy,cx+70,cy-90,C.ink,6)+'<circle cx="'+cx+'" cy="'+cy+'" r="12" fill="'+C.ink+'"/>';
-    return H.svg(s,'A spinner'); }
-  return {
-  probSimple:function(){ var T=H.ri(0,2);
-    if(T===0){ var k=H.pick([3,3,4]), counts=[]; for(var i=0;i<k;i++) counts.push(H.ri(1,7)); var tot=counts.reduce(function(a,b){ return a+b; },0); if(tot>24||tot<6) return null;
-      var c=H.ri(0,k-1), not=H.chance(0.3), fav=not?tot-counts[c]:counts[c], ans=R(fav,tot);
-      var cands=[[R(fav,tot-fav),'That compares '+(not?'not ':'')+COLS[c][0]+' to the rest. Use favorable ÷ total.'],[R(tot-fav,tot),'That’s the probability of '+(not?'getting ':'NOT getting ')+COLS[c][0]+'.'],[R(1,k),'The colors aren’t equally likely. Count the marbles.'],[R(fav,tot+1),'Count all '+tot+' marbles.']];
-      return { prompt:'You pick one marble without looking. What is P('+(not?'<b>not</b> ':'')+COLS[c][0]+')?', visual:jar(counts),
-        choices:H.choices(H.C(F(ans),ans),cands,F), check:function(v){ var n=0; counts.forEach(function(x,i){ if((i===c)!==not) n+=x; }); return H.eqR(v,R(n,tot)); },
-        explain:(not?'Not '+COLS[c][0]:COLS[c][0].charAt(0).toUpperCase()+COLS[c][0].slice(1))+': '+fav+' out of '+tot+' = '+H.ans(F(ans))+'.' }; }
-    if(T===1){ var ev=H.pick([['an even number',function(n){ return n%2===0; }],['a number greater than '+(H.ri(2,4)),null],['a multiple of 3',function(n){ return n%3===0; }],['a prime number',function(n){ return n===2||n===3||n===5; }],['a number less than '+(H.ri(3,5)),null]]);
-      var pred=ev[1]; if(!pred){ var m=+ev[0].match(/\d+/)[0]; pred=/greater/.test(ev[0])? function(n){ return n>m; } : function(n){ return n<m; }; }
-      var fav2=[1,2,3,4,5,6].filter(pred).length, a2=R(fav2,6);
-      var c2=[[R(fav2,6-fav2),'Use favorable ÷ all 6 outcomes.'],[R(6-fav2,6),'That’s the chance of NOT rolling '+ev[0]+'.'],[R(1,6),'Count every face that works, not just one.'],[R(fav2+1,6),'List the faces that work and count them.']];
-      return { prompt:'You roll a number cube (1–6). What is the probability of rolling '+ev[0]+'?', choices:H.choices(H.C(F(a2),a2),c2,F,function(v){ return v.n>=0&&H.val(v)<=1; }),
-        check:function(v){ var n=0; for(var f=1;f<=6;f++) if(pred(f)) n++; return H.eqR(v,R(n,6)); }, explain:'The faces that work: '+[1,2,3,4,5,6].filter(pred).join(', ')+'. That’s '+fav2+' out of 6 = '+H.ans(F(a2))+'.' }; }
-    var n=H.pick([4,5,6,8]), sec=[]; for(var j=0;j<n;j++) sec.push(H.ri(0,3)); var c3=H.pick(sec), fav3=sec.filter(function(x){ return x===c3; }).length; if(fav3===n) return null; var a3=R(fav3,n);
-    var c4=[[R(fav3,n-fav3),'Use '+COLS[c3][0]+' sections ÷ all '+n+' sections.'],[R(n-fav3,n),'That’s the chance of NOT landing on '+COLS[c3][0]+'.'],[R(1,n),'Count every '+COLS[c3][0]+' section.'],[R(1,new Set(sec).size),'The colors don’t have the same number of sections.']];
-    return { prompt:'The spinner has '+n+' equal sections. What is P('+COLS[c3][0]+')?', visual:spinner(sec), choices:H.choices(H.C(F(a3),a3),c4,F),
-      check:function(v){ var k2=0; sec.forEach(function(x){ if(x===c3) k2++; }); return H.eqR(v,R(k2,sec.length)); }, explain:fav3+' of '+n+' sections are '+COLS[c3][0]+': '+H.ans(F(a3))+'.' }; },
-  probComp:function(){ var T=H.ri(0,2);
-    if(T===0){ var a=H.ri(2,5), b=H.ri(3,6), it=H.pick([['shirts','pairs of pants','outfits'],['sandwiches','drinks','lunch combos'],['flavors of ice cream','toppings','sundaes'],['colors','sizes','choices']]);
-      var cands=[[a+b,'Each '+it[0].replace(/s$/,'')+' goes with every one of the '+b+'. Multiply.'],[a*b*2,'Make a tree diagram: '+a+' branches, each with '+b+'.'],[Math.max(a,b),'Count every pair.'],[a*b-1,'Count every pair.']];
-      return { prompt:'You choose one of '+a+' '+it[0]+' and one of '+b+' '+it[1]+'. How many different '+it[2]+' are possible?', choices:H.choices(H.C(''+(a*b),a*b),cands,function(v){ return ''+v; }),
-        check:function(v){ var n=0; for(var i=0;i<a;i++) for(var j=0;j<b;j++) n++; return v===n; }, explain:H.eq(a+' × '+b+' = '+H.ans(''+a*b))+' '+it[2]+'.' }; }
-    if(T===1){ var ev=H.pick([['heads',R(1,2),'flip a coin'],['tails',R(1,2),'flip a coin']]), ev2=H.pick([['an even number',R(1,2)],['a 6',R(1,6)],['a number less than 3',R(1,3)],['a 1 or a 2',R(1,3)],['a number greater than 4',R(1,3)]]);
-      var ans=H.mul(ev[1],ev2[1]);
-      var cands=[[H.add(ev[1],ev2[1]),'Both have to happen. For independent events, multiply.'],[R(1,8),'There are 2 × 6 = 12 outcomes. Count the ones that work.'],[ev2[1],'Both have to happen: multiply by the chance of '+ev[0]+' too.'],[R(1,12),'Count the outcomes that work, out of 12.']];
-      return { prompt:'You '+ev[2]+' and roll a number cube. What is P('+ev[0]+' and '+ev2[0]+')?', choices:H.choices(H.C(F(ans),ans),cands,F,function(v){ return H.val(v)<=1; }),
-        check:function(v){ return H.eqR(v,H.mul(ev[1],ev2[1])); }, explain:H.eq(F(ev[1])+' × '+F(ev2[1])+' = '+H.ans(F(ans)))+'.' }; }
-    var r=H.ri(2,6), bl=H.ri(2,6), g=H.ri(1,4), t=r+bl+g, ans2=R(r*bl,t*t);
-    var c2=[[R(r*bl,t*(t-1)),'The first marble goes back, so the total stays '+t+'.'],[H.add(R(r,t),R(bl,t)),'Both have to happen. Multiply.'],[R(r+bl,2*t),'Multiply the two probabilities.'],[R(r*bl,t),'Multiply the fractions: '+r+'/'+t+' × '+bl+'/'+t+'.']];
-    return { prompt:'A bag has '+r+' red, '+bl+' blue, and '+g+' green marbles. You pick one, put it back, then pick again. What is P(red, then blue)?', visual:jar([r,bl,g]),
-      choices:H.choices(H.C(F(ans2),ans2),c2,F,function(v){ return H.val(v)<=1; }), check:function(v){ return H.eqR(v,H.mul(R(r,t),R(bl,t))); },
-      explain:H.eq(r+'/'+t+' × '+bl+'/'+t+' = '+H.ans(F(ans2)))+'.' }; },
-  probPred:function(){ if(H.chance(0.5)){ var n=H.pick([4,5,6,8,10]), k=H.ri(1,n-1), N=n*H.pick([10,20,25,30,15]), ans=N*k/n;
-      var cands=[[N-ans,'That’s the prediction for NOT landing on red.'],[N/n,'Red is '+k+' of the '+n+' sections.'],[ans+k*5,'Use the probability '+k+'/'+n+' × '+N+'.'],[k*n,'Multiply the probability by the number of spins.']];
-      return { prompt:'A spinner has '+n+' equal sections. '+k+' are red. If you spin it '+N+' times, about how many times will it land on red?',
-        choices:H.choices(H.C(''+ans,ans),cands,function(v){ return ''+v; },function(v){ return Number.isInteger(v)&&v>0; }), check:function(v){ return v*n===N*k; },
-        explain:H.eq(k+'/'+n+' × '+N+' = '+H.ans(''+ans))+'.' }; }
-    var s=H.pick([20,25,40,50,60]), x=H.ri(2,s-2), Np=s*H.pick([5,6,8,10,12,4]), pr=Np*x/s; if(pr%1!==0) return null;
-    var item=H.pick([['customers','bought a smoothie'],['students','chose pizza'],['bulbs','were broken'],['shoppers','used a coupon']]);
-    var c2=[[Np-pr,'That’s the prediction for the ones that did NOT. '],[x+(Np-s),'Use a ratio: '+x+' out of '+s+'. Don’t add.'],[Np*x/100,'The sample is '+s+', not 100.'],[pr+x,'Set up '+x+'/'+s+' = ?/'+Np+'.']];
-    return { prompt:'In a sample of '+s+' '+item[0]+', '+x+' '+item[1]+'. Predict how many of '+H.num(Np)+' '+item[0]+' '+item[1]+'.',
-      choices:H.choices(H.C(H.num(pr),pr),c2,H.num,function(v){ return Number.isInteger(v)&&v>0; }), check:function(v){ return v*s===Np*x; },
-      explain:H.eq(x+'/'+s+' × '+H.num(Np)+' = '+H.ans(H.num(pr)))+'.' }; },
-  probExp:function(){ var N=H.pick([30,60,90,120]), counts=[], left=N; for(var f=1;f<=5;f++){ var c=Math.max(1,Math.round(N/6+H.ri(-N/15,N/15))); counts.push(c); left-=c; } if(left<1) return null; counts.push(left);
-    var k=H.ri(1,6), ck=counts[k-1], T=H.ri(0,2), vis=H.svg(H.table(['Number','Times rolled'],counts.map(function(c,i){ return [''+(i+1),''+c]; }),[0.45,0.55]),'Results of rolling a number cube');
-    var lead='A number cube was rolled '+N+' times. ';
-    if(T===0){ var ans=R(ck,N), cands=[[R(1,6),'That’s the theoretical probability. Use the results in the table.'],[R(ck,6),'Divide by the number of rolls, '+N+'.'],[R(N-ck,N),'That’s the chance of NOT rolling a '+k+'.'],[R(ck,N-ck),'Use '+ck+' ÷ all '+N+' rolls.']];
-      return { prompt:lead+'What is the <b>experimental</b> probability of rolling a '+k+'?', visual:vis, choices:H.choices(H.C(F(ans),ans),cands,F), check:function(v){ return H.eqR(v,R(counts[k-1],N)); },
-        explain:'Experimental = what happened: '+ck+' out of '+N+' = '+H.ans(F(ans))+'.' }; }
-    if(T===1){ var c1=[[R(ck,N),'That’s the experimental probability from the table. Theoretical uses the 6 equal faces.'],[R(1,N),'There are 6 equally likely faces.'],[R(5,6),'That’s the chance of NOT rolling a '+k+'.'],[R(ck,6),'Theoretical probability doesn’t use the table.']];
-      return { prompt:lead+'What is the <b>theoretical</b> probability of rolling a '+k+'?', visual:vis, choices:H.choices(H.C(F(R(1,6)),R(1,6)),c1,F), check:function(v){ return H.eqR(v,R(1,6)); },
-        explain:'Theoretical = 1 face out of 6 = '+H.ans(F(R(1,6)))+'.' }; }
-    var exp=N/6, d=ck-exp; if(d===0) return null;
-    var c3=[[ck,'That’s the actual count. Compare it to the expected count.'],[exp,'That’s the expected count, '+N+' ÷ 6. Find the difference.'],[Math.abs(d)+exp,'Subtract: '+ck+' and '+exp+'.'],[Math.abs(d)+1,'Subtract: '+ck+' and '+exp+'.']];
-    return { prompt:lead+'Theory says each number should come up about '+exp+' times. How far from that was the number of '+k+'s?', visual:vis,
-      choices:H.choices(H.C(''+Math.abs(d),Math.abs(d)),c3,function(v){ return ''+v; },function(v){ return v>0; }), check:function(v){ return v===Math.abs(counts[k-1]-N/6); },
-      explain:'Expected '+exp+', actual '+ck+': a difference of '+H.ans(''+Math.abs(d))+'.' }; }
-  };
-}
-
-/* ================= 7.7A  Linear relationships y = mx + b ================= */
-function G_lin(H){
-  var R=H.R, C=H.COL, MI=H.MINUS;
-  function L(m,b){ var mt=H.decStr(m)||H.fmtF(m), s='y = '; if(m.n!==0) s+=(H.eqR(m,R(1))?'':H.eqR(m,R(-1))?MI:mt)+'x'; if(b.n!==0||m.n===0) s+=(m.n===0?(H.decStr(b)||H.fmtF(b)):(b.n>0?' + ':' '+MI+' ')+(H.decStr(H.absR(b))||H.fmtF(H.absR(b)))); return s; }
-  function fits(v,pts){ return pts.every(function(p){ return H.eqR(H.add(H.mul(v.m,p[0]),v.b),p[1]); }); }
-  function cand(m,b,why){ return [{m:m,b:b},why,L(m,b)]; }
-  function choicesFor(right,cands){ return H.choices(H.C(L(right.m,right.b),right),cands,function(v){ return L(v.m,v.b); }); }
-  return {
-  linTable:function(){ var m=H.pick([R(2),R(3),R(4),R(5),R(-2),R(-3),R(1,2),R(3,2),R(6)]), b=R(H.nz(-9,12)), step=H.pick([1,1,2]), x0=H.pick([0,1,1,2]);
-    var xs=[0,1,2,3].map(function(i){ return x0+i*step; }), pts=xs.map(function(x){ return [R(x),H.add(H.mul(m,R(x)),b)]; }); if(pts.some(function(p){ return p[1].d!==1; })) return null;
-    var y1=pts[0][1], cands=[cand(b,m,'The rate goes with x, and the starting value is the number added.'),cand(m,R(0),'Check x = '+xs[0]+': y must be '+H.num(y1.n)+'. Don’t forget b.'),cand(H.mul(m,R(step)),b,'y changes by '+H.num(m.n*step/m.d)+' when x goes up '+step+'. The rate is per 1.'),cand(m,y1,'b is the value of y when x = 0.'),cand(H.neg(m),b,'Check the sign of the rate.')];
-    if(x0===0) cands.splice(3,1);
-    return { prompt:'Which equation represents the table?', visual:H.svg(H.table(['x','y'],pts.map(function(p){ return [H.num(p[0].n),H.num(p[1].n)]; })),'Table of x and y'),
-      choices:choicesFor({m:m,b:b},cands), check:function(v){ return fits(v,pts); }, explain:'Rate = change in y ÷ change in x = '+(H.decStr(m)||H.fmtF(m))+'. When x = 0, y = '+H.num(b.n)+'. '+H.ans(L(m,b))+'.' }; },
-  linWords:function(){ var T=H.pick([
-      function(){ var f=H.ri(20,60), r=H.ri(15,45); return {m:R(r),b:R(f),t:'A gym charges a $'+f+' sign-up fee plus $'+r+' per month. Which equation shows the total cost y after x months?'}; },
-      function(){ var f=H.pick([35,40,45,50,60,75]), r=H.pick([25,30,35,40,45,50,55]); return {m:R(r),b:R(f),t:'A plumber charges $'+f+' to come out plus $'+r+' per hour. Which equation shows the total cost y for x hours?'}; },
-      function(){ var h=H.pick([10,12,15,18]), r=H.pick([R(1,2),R(3,2),R(2),R(3,4)]); return {m:H.neg(r),b:R(h),t:'A candle is '+h+' inches tall. It burns '+(H.decStr(r))+' inch'+(H.eqR(r,R(1,2))||H.eqR(r,R(3,4))?'':'es')+' per hour. Which equation shows its height y after x hours?'}; },
-      function(){ var s=H.ri(50,200), r=H.ri(10,40); return {m:R(r),b:R(s),t:'Ava has $'+s+' saved. She adds $'+r+' each week. Which equation shows her savings y after x weeks?'}; },
-      function(){ var f=H.pick([2.5,3,3.5,4]), r=H.pick([1.5,2,2.5,1.75]); return {m:H.D(r),b:H.D(f),t:'A taxi charges $'+H.fixed(Math.round(f*100),2)+' plus $'+H.fixed(Math.round(r*100),2)+' per mile. Which equation shows the cost y for x miles?'}; } ])();
-    var m=T.m, b=T.b, pts=[[R(0),b],[R(2),H.add(H.mul(m,R(2)),b)],[R(5),H.add(H.mul(m,R(5)),b)]];
-    var cands=[cand(b,m,'The amount that repeats goes with x. The one-time amount is b.'),cand(m,H.neg(b),'The starting amount adds: + '+(H.decStr(b))+'.'),cand(H.neg(m),b,m.n<0?'It goes down, so the rate is negative.':'It goes up, so the rate is positive.'),cand(H.add(m,b),R(0),'Check x = 0: the cost/amount should be '+H.decStr(b)+'.'),cand(m,R(0),'Don’t forget the starting amount.')];
-    return { prompt:T.t, choices:choicesFor({m:m,b:b},cands), check:function(v){ return fits(v,pts); }, explain:'Rate (per x): '+H.decStr(m)+'. Start (x = 0): '+H.decStr(b)+'. '+H.ans(L(m,b))+'.' }; },
-  linGraph:function(){ var m=H.pick([R(1),R(2),R(3),R(1,2),R(3,2),R(-1),R(-2),R(-1,2)]), b=R(m.n<0?H.ri(6,10):H.ri(1,4)); var y10=H.add(H.mul(m,R(10)),b);
-    var o=46, S=300, u=S/10, X=function(x){ return o+x*u; }, Y=function(y){ return 380-o-y*u; }, s='';
-    for(var i=0;i<=10;i++) s+=H.line(X(i),Y(0),X(i),Y(10),C.grid,2)+H.line(X(0),Y(i),X(10),Y(i),C.grid,2);
-    s+=H.line(X(0),Y(0),X(10),Y(0),C.axis,3)+H.line(X(0),Y(0),X(0),Y(10),C.axis,3);
-    for(i=2;i<=10;i+=2) s+=H.t(X(i),Y(0)+24,''+i,17,C.mute)+H.t(X(0)-8,Y(i)+6,''+i,17,C.mute,'end');
-    var xEnd=10, yEnd=H.val(y10); if(yEnd>10){ xEnd=(10-H.val(b))/H.val(m); yEnd=10; } if(yEnd<0){ xEnd=(0-H.val(b))/H.val(m); yEnd=0; }
-    s+=H.line(X(0),Y(H.val(b)),X(xEnd),Y(yEnd),C.c,5);
-    var p2=null; for(var xx=1;xx<=10;xx++){ var yy=H.add(H.mul(m,R(xx)),b); if(yy.d===1&&yy.n>=0&&yy.n<=10&&xx>=2){ p2=[xx,yy.n]; break; } } if(!p2) return null;
-    s+='<circle cx="'+X(0)+'" cy="'+Y(b.n)+'" r="8" fill="'+C.y+'" stroke="#0E1016" stroke-width="3"/><circle cx="'+X(p2[0])+'" cy="'+Y(p2[1])+'" r="8" fill="'+C.y+'" stroke="#0E1016" stroke-width="3"/>';
-    var pts=[[R(0),b],[R(p2[0]),R(p2[1])]];
-    var cands=[cand(b,m,'The y-intercept is b. The slope (rate) goes with x.'),cand(H.div(R(1),m),b,'Rate = rise ÷ run, not run ÷ rise.'),cand(H.neg(m),b,m.n<0?'The line goes down, so the rate is negative.':'The line goes up, so the rate is positive.'),cand(m,R(p2[1]),'b is where the line crosses the y-axis (x = 0).'),cand(m,R(0),'The line doesn’t start at (0, 0). Add b.')];
-    return { prompt:'Which equation represents the line?', visual:H.svg(s,'Graph of a line'), choices:choicesFor({m:m,b:b},cands), check:function(v){ return fits(v,pts); },
-      explain:'It crosses the y-axis at '+b.n+'. From (0, '+b.n+') to ('+p2[0]+', '+p2[1]+'): rate = '+H.num(p2[1]-b.n)+' ÷ '+p2[0]+' = '+(H.decStr(m)||H.fmtF(m))+'. '+H.ans(L(m,b))+'.' }; },
-  linValue:function(){ if(H.chance(0.5)){ var m=H.nz(-6,8), b=H.nz(-12,15), x=H.ri(2,9); if(Math.abs(m)===1) return null; var y=m*x+b;
-      var cands=[[m*(x+b),'Multiply first, then add: '+m+' × '+x+' = '+(m*x)+'.'],[m*x,'Don’t forget b = '+H.num(b)+'.'],[(m+b)*x,'Only '+H.num(m)+' is multiplied by x.'],[m*x-b,'Check the sign of b.']];
-      return { prompt:'For '+H.big(L(R(m),R(b)))+', what is y when x = '+x+'?', choices:H.choices(H.C(H.num(y),y),cands,H.num), check:function(v){ return v-b===m*x; },
-        explain:H.eq('y = '+m+'('+x+')'+(b>0?' + '+b:' − '+(-b))+' = '+H.ans(H.num(y)))+'.' }; }
-    var f=H.pick([35,40,45,50,60]), r=H.pick([25,30,40,45,50]), h=H.pick([R(2),R(3),R(5,2),R(7,2),R(4),R(3,2)]), tot=H.add(H.mul(R(r),h),R(f)); if(tot.d!==1) return null;
-    var c2=[[H.mul(R(r+f),h),'The $'+f+' is charged once, not every hour.'],[H.mul(R(r),h),'Add the $'+f+' fee.'],[H.add(R(r),H.mul(R(f),h)),'The hourly rate is $'+r+'. Multiply it by the hours.'],[H.add(tot,R(r)),'Check: '+r+' × '+H.decStr(h)+'.']];
-    function M(v){ return H.money(Math.round(H.val(v)*100)); }
-    return { prompt:'A plumber charges $'+f+' plus $'+r+' per hour: y = '+r+'x + '+f+'. How much for a '+H.decStr(h)+'-hour job?', choices:H.choices(H.C(M(tot),tot),c2,M),
-      check:function(v){ return H.eqR(H.sub(v,R(f)),H.mul(R(r),h)); }, explain:H.eq(r+' × '+H.decStr(h)+' + '+f+' = '+H.ans(M(tot)))+'.' }; }
-  };
-}
-
-/* ================= 7.13  Personal financial literacy ================= */
-function G_fin(H){
-  var R=H.R, M=H.money;
-  var ASSETS=['Savings account','Car','House','Checking account','Laptop','Stocks','Cash'], LIABS=['Car loan','Credit card debt','Student loan','Mortgage','Unpaid medical bill','Money owed to a friend'];
-  return {
-  finTax:function(){ if(H.chance(0.55)){ var pay=H.pick([400,500,600,640,720,800,850,900,960,1000,1200]), r=H.pick([10,12,15,20,22]), tax=pay*r/100; if((tax*100)%1) return null; var take=pay-tax, askTax=H.chance(0.35), ans=(askTax?tax:take)*100;
-      var cands=[[(askTax?take:tax)*100,askTax?'That’s her take-home pay. The tax is '+r+'% of her pay.':'That’s the tax. Subtract it from her pay.'],[(pay-r)*100,r+'% of '+M(pay*100)+' is not $'+r+'.'],[(pay+tax)*100,'Income tax is taken out of her pay.'],[pay*r*10,'Percent means out of 100.']];
-      return { prompt:'Rosa earns '+M(pay*100)+' a week. '+r+'% is withheld for federal income tax. '+(askTax?'How much is withheld?':'How much does she take home?'),
-        choices:H.choices(H.C(M(ans),ans),cands,M,function(v){ return Number.isInteger(v)&&v>0; }), check:function(v){ return askTax? v*100===pay*100*r : v*100===pay*100*(100-r); },
-        explain:askTax? H.eq(H.decStr(R(r,100))+' × '+M(pay*100)+' = '+H.ans(M(ans))) : 'She keeps '+(100-r)+'%: '+H.eq(H.decStr(R(100-r,100))+' × '+M(pay*100)+' = '+H.ans(M(ans))) }; }
-    var p=H.ri(2,20)*1600, tax=p*625/10000, tot=p+tax, askT=H.chance(0.4), a2=askT?tax:tot;
-    var c2=[[askT?tot:tax,askT?'That’s the total. The tax alone is 6.25% of the price.':'That’s only the tax. Add it to the price.'],[p+625,'6.25% of the price is not $6.25.'],[askT?tax*10:p+tax*10,'6.25% = 0.0625.'],[p-tax,'Sales tax adds to the price.']];
-    return { prompt:'The Texas state sales tax is 6.25%. A '+M(p)+' item has no other tax. '+(askT?'How much is the sales tax?':'What is the total cost?'),
-      choices:H.choices(H.C(M(a2),a2),c2,M,function(v){ return Number.isInteger(v)&&v>0; }), check:function(v){ return askT? v*10000===p*625 : v*10000===p*10625; },
-      explain:'Tax: '+H.eq('0.0625 × '+M(p)+' = '+M(tax))+(askT?'.':'. Total: '+H.ans(M(tot))+'.') }; },
-  finWorth:function(){ if(H.chance(0.4)){ var liab=H.chance(0.5), right=H.pick(liab?LIABS:ASSETS), others=H.shuffle((liab?ASSETS:LIABS).slice()).slice(0,3);
-      var ch=[H.C(right,right)]; others.forEach(function(o){ ch.push(H.C(o,o,liab?'That’s something you own, so it’s an asset.':'That’s money you owe, so it’s a liability.')); });
-      return { prompt:'Which of these is '+(liab?'a <b>liability</b> (something you owe)?':'an <b>asset</b> (something you own)?'), choices:ch,
-        check:function(v){ return liab? LIABS.indexOf(v)>=0 : ASSETS.indexOf(v)>=0; }, explain:H.ans(right)+' is '+(liab?'money owed: a liability.':'something of value you own: an asset.') }; }
-    var A=H.shuffle(ASSETS.slice()).slice(0,H.ri(2,3)), L=H.shuffle(LIABS.slice()).slice(0,2), items=[], ta=0, tl=0;
-    A.forEach(function(n){ var v=H.ri(2,40)*250; ta+=v; items.push([n,v,1]); }); L.forEach(function(n){ var v=H.ri(1,30)*250; tl+=v; items.push([n,v,-1]); }); H.shuffle(items);
-    var nw=ta-tl, ans=nw*100;
-    var cands=[[(ta+tl)*100,'Liabilities are money owed. Subtract them.'],[ta*100,'Subtract what is owed (the liabilities).'],[(tl-ta)*100,'Net worth = assets − liabilities.'],[-tl*100,'Add up the assets first.']];
-    return { prompt:'What is this person’s net worth?', visual:H.svg(H.table(['Item','Value'],items.map(function(it){ return [it[0],'$'+H.num(it[1])]; }),[0.62,0.38]),'List of assets and liabilities'),
-      choices:H.choices(H.C(M(ans),ans),cands,M), check:function(v){ var s=0; items.forEach(function(it){ s+=(ASSETS.indexOf(it[0])>=0?1:-1)*it[1]; }); return v===s*100; },
-      explain:'Assets '+M(ta*100)+' − liabilities '+M(tl*100)+' = '+H.ans(M(ans))+'.' }; },
-  finInterest:function(){ var P=H.pick([200,400,500,800,1000,1200,2000,2500]), r=H.pick([2,3,4,5,6,8,10]), t=H.pick([2,3,4,5]);
-    if(H.chance(0.5)){ var I=P*r*t/100, askI=H.chance(0.5), a=(askI?I:P+I)*100;
-      var cands=[[(askI?P+I:I)*100,askI?'That’s the balance. The interest alone is P × r × t.':'That’s just the interest. Add it to the '+M(P*100)+' deposit.'],[(askI?P*r/100:P+P*r/100)*100,'That’s one year. Multiply by '+t+' years.'],[(askI?P*r*t:P+P*r*t)*100,r+'% = '+H.decStr(R(r,100))+'.'],[(askI?I+P*r/100:P+I+P*r/100)*100,'Simple interest: '+M(P*100)+' × '+H.decStr(R(r,100))+' × '+t+'.']];
-      return { prompt:'You deposit '+M(P*100)+' at '+r+'% simple interest for '+t+' years. '+(askI?'How much interest do you earn?':'What is the balance at the end?'),
-        choices:H.choices(H.C(M(a),a),cands,M,function(v){ return Number.isInteger(v)&&v>0; }), check:function(v){ return askI? v*100===P*100*r*t : v*100===P*100*(100+r*t); },
-        explain:'I = Prt = '+H.eq(M(P*100)+' × '+H.decStr(R(r,100))+' × '+t+' = '+M(I*100))+(askI?'.':'. Balance: '+H.ans(M(a))+'.') }; }
-    t=H.pick([2,3]); var cents=P*100, hist=[cents]; for(var y=0;y<t;y++){ var nx=cents*(100+r); if(nx%100) return null; cents=nx/100; hist.push(cents); }
-    var simple=P*100+P*r*t;
-    var c2=[[simple,'That’s simple interest. Compound interest earns interest on the interest too.'],[cents-P*100,'That’s only the interest. The question asks for the balance.'],[hist[t-1],'That’s after '+(t-1)+' year'+(t-1>1?'s':'')+'. Go '+t+' years.'],[P*100*(100+r*t+r)/100,'Find each year’s balance, then take '+r+'% of that.']];
-    return { prompt:'You deposit '+M(P*100)+' at '+r+'% interest <b>compounded yearly</b>. What is the balance after '+t+' years?',
-      choices:H.choices(H.C(M(cents),cents),c2,M,function(v){ return Number.isInteger(v)&&v>0; }), check:function(v){ var c=P*100; for(var i=0;i<t;i++) c=c+c*r/100; return v===c; },
-      explain:hist.map(function(h,i){ return i? 'Year '+i+': '+M(h) : 'Start: '+M(h); }).join(' → ')+'. '+H.ans(M(cents))+'.' }; },
-  finBudget:function(){ if(H.chance(0.55)){ var inc=H.pick([1800,2000,2200,2400,2600,3000]), ex=[['Rent',H.ri(14,22)*50],['Food',H.ri(5,9)*50],['Car',H.ri(3,7)*50],['Phone',H.ri(5,9)*10],['Fun',H.ri(4,12)*10]].slice(0,H.ri(3,5)), tot=0;
-      ex.forEach(function(e){ tot+=e[1]; }); var left=inc-tot; if(left<=0) return null;
-      var last=ex[ex.length-1];
-      var cands=[[tot*100,'That’s what is spent. Subtract it from the income.'],[(left+last[1])*100,'Subtract every expense, including '+last[0].toLowerCase()+'.'],[(inc+tot)*100,'Expenses are subtracted from income.'],[(left-50)*100,'Add the expenses carefully: they total $'+H.num(tot)+'.']];
-      return { prompt:'Here is a monthly budget. How much money is left for savings?', visual:H.svg(H.table(['Budget','Amount'],[['Income','$'+H.num(inc)]].concat(ex.map(function(e){ return [e[0],'$'+H.num(e[1])]; })),[0.55,0.45]),'Monthly budget'),
-        choices:H.choices(H.C(M(left*100),left*100),cands,M,function(v){ return v>0; }), check:function(v){ var s=inc; ex.forEach(function(e){ s-=e[1]; }); return v===s*100; },
-        explain:H.eq('$'+H.num(inc)+' − $'+H.num(tot)+' = '+H.ans(M(left*100)))+'.' }; }
-    var I=H.pick([1600,2000,2400,2500,3000,3200]), p=H.pick([10,15,20,25,30,35,40]), part=I*p/100; if(part%1) return null;
-    var what=H.pick(['rent','food','savings','car costs']);
-    function P(v){ return H.fmtD(v)+'%'; }
-    var c2=[[R(100-p),'That’s the percent left for everything else.'],[R(Math.round(I/part)),'That divides the whole by the part. Divide '+part+' by '+H.num(I)+'.'],[R(p,100),'Multiply by 100 to write a percent.'],[R(p+5),'Divide '+part+' by '+H.num(I)+'.']];
-    return { prompt:'A family earns $'+H.num(I)+' a month and spends $'+H.num(part)+' on '+what+'. What percent of income is that?',
-      choices:H.choices(H.C(p+'%',R(p)),c2,P,function(v){ return H.decStr(v)!==null&&v.n>0; }), check:function(v){ return H.eqR(H.mul(v,R(I)),R(part*100)); },
-      explain:H.eq(H.num(part)+' ÷ '+H.num(I)+' = '+H.decStr(R(p,100))+' = '+H.ans(p+'%'))+'.' }; }
-  };
-}
-
-/* ================= 7.6G, 7.12A–C  Data and samples ================= */
-function G_data(H){
-  var R=H.R, C=H.COL;
-  function sorted(a){ return a.slice().sort(function(x,y){ return x-y; }); }
-  function median(a){ var s=sorted(a), n=s.length; return n%2? R(s[(n-1)/2]) : R(s[n/2-1]+s[n/2],2); }
-  function mean(a){ return R(a.reduce(function(x,y){ return x+y; },0),a.length); }
-  function range(a){ var s=sorted(a); return R(s[s.length-1]-s[0]); }
-  function mode(a){ var c={}, best=null, bc=0, tie=false; a.forEach(function(v){ c[v]=(c[v]||0)+1; }); Object.keys(c).forEach(function(k){ if(c[k]>bc){ bc=c[k]; best=+k; tie=false; } else if(c[k]===bc) tie=true; }); return tie?null:R(best); }
-  function dotPlot(data,lo,title){ var x=function(v){ return 30+(v-lo)*32; }, y0=300, s='';
-    s+=H.line(16,y0,364,y0,C.axis,3); for(var v=lo;v<=lo+10;v++) s+=H.line(x(v),y0-7,x(v),y0+7,C.axis,2)+H.t(x(v),y0+30,''+v,17,C.mute);
-    var cnt={}; data.forEach(function(d){ cnt[d]=(cnt[d]||0)+1; s+='<circle cx="'+x(d)+'" cy="'+(y0-6-cnt[d]*22)+'" r="9" fill="'+C.c+'"/>'; });
-    s+=H.t(190,40,title,20,C.axis); return H.svg(s,'Dot plot'); }
-  function boxRow(f,y,lo,col,lab){ var x=function(v){ return 30+(v-lo)*(320/(H.boxSpan||40)); }, s='';
-    s+=H.line(x(f[0]),y,x(f[1]),y,col,3)+H.line(x(f[3]),y,x(f[4]),y,col,3)+'<rect x="'+x(f[1])+'" y="'+(y-26)+'" width="'+(x(f[3])-x(f[1]))+'" height="52" fill="'+col+'2A" stroke="'+col+'" stroke-width="3"/>';
-    s+=H.line(x(f[2]),y-26,x(f[2]),y+26,col,4)+H.line(x(f[0]),y-14,x(f[0]),y+14,col,3)+H.line(x(f[4]),y-14,x(f[4]),y+14,col,3);
-    if(lab) s+=H.t(x(f[0])-8,y-30,lab,18,col,'start'); return s; }
-  function axis(lo,span,y){ var s=H.line(20,y,360,y,C.axis,3), step=span/10, x=function(v){ return 30+(v-lo)*(320/span); }; for(var i=0;i<=10;i++){ var v=lo+i*step; s+=H.line(x(v),y-7,x(v),y+7,C.axis,2); if(i%2===0) s+=H.t(x(v),y+28,''+v,17,C.mute); } return s; }
-  function five(lo,span){ var step=span/10, q=[]; for(var t=0;t<40;t++){ q=[0,0,0,0,0].map(function(){ return lo+H.ri(0,10)*step; }).sort(function(a,b){ return a-b; }); if(new Set(q).size===5&&q[4]-q[0]>=span*0.4) return q; } return null; }   /* every value sits on a tick mark */
-  var NAMES=[['Mean','mean'],['Median','median'],['Mode','mode'],['Range','range']];
-  return {
-  dataDot:function(){ var lo=H.pick([0,1,2,5,10]), n=H.ri(9,14), data=[]; for(var i=0;i<n;i++) data.push(lo+H.ri(1,9)); var which=H.ri(0,3);
-    if(which===0){ var r=data.reduce(function(a,b){ return a+b; },0)%n; for(var k=0;k<r;k++){ var j=H.ri(0,n-1); if(data[j]>lo+1) data[j]--; else return null; } }
-    var st={mean:mean(data),median:median(data),mode:mode(data),range:range(data)}; if(!st.mode&&which===2) return null;
-    var key=NAMES[which][1], ans=st[key]; if(H.decStr(ans)===null) return null;
-    var ctx=H.pick(['Points scored per game','Hours of sleep','Pets per family','Books read this month','Minutes to get to school']);
-    var cands=[]; NAMES.forEach(function(nm,i){ if(i!==which&&st[nm[1]]&&H.decStr(st[nm[1]])!==null) cands.push([st[nm[1]],'That’s the '+nm[1]+'.']); });
-    cands.push([R(sorted(data)[n-1]),'That’s the greatest value.'],[H.add(ans,R(1)),'Count the dots carefully: there are '+n+'.']);
-    var how={mean:'Add all '+n+' values and divide by '+n+'.',median:'Put the '+n+' values in order and find the middle.',mode:'The value with the most dots.',range:'Greatest − least.'}[key];
-    return { prompt:'What is the <b>'+key+'</b> of the data?', visual:dotPlot(data,lo,ctx), choices:H.choices(H.C(H.decStr(ans),ans),cands,H.decStr),
-      check:function(v){ var t={mean:mean,median:median,mode:mode,range:range}[key](data); return t&&H.eqR(v,t); }, explain:how+' '+H.ans(H.decStr(ans))+'.' }; },
-  dataBox:function(){ var lo=H.pick([0,10,20,40,50]), span=H.pick([20,40]), f=five(lo,span); if(!f) return null; H.boxSpan=span;
-    var ctx=H.pick(['Points per game','Minutes of homework','Push-ups in a minute','Texts sent per day','Laps run in gym']);
-    var s=axis(lo,span,300)+boxRow(f,190,lo,C.c)+H.t(190,60,ctx,20,C.axis), vis=H.svg(s,'Box plot');
-    var T=H.ri(0,3);
-    if(T<3){ var nm=['median','interquartile range (IQR)','range'][T], ans=[f[2],f[3]-f[1],f[4]-f[0]][T];
-      var cands=[[f[3]-f[1],'That’s the IQR: Q3 − Q1.'],[f[4]-f[0],'That’s the range: max − min.'],[f[2],'That’s the median, the line inside the box.'],[f[3],'That’s Q3, the right side of the box.'],[f[1],'That’s Q1, the left side of the box.'],[(f[0]+f[4])/2,'The median is the line inside the box.']];
-      return { prompt:'What is the <b>'+nm+'</b> of the data?', visual:vis, choices:H.choices(H.C(''+ans,ans),cands,function(v){ return Number.isInteger(v)?''+v:null; }),
-        check:function(v){ return v===[f[2],f[3]-f[1],f[4]-f[0]][T]; }, explain:(T===0?'The line inside the box: ':T===1?'Q3 − Q1 = '+f[3]+' − '+f[1]+' = ':'Max − min = '+f[4]+' − '+f[0]+' = ')+H.ans(''+ans)+'.' }; }
-    var Qs=H.pick([['greater than '+f[3],25,'Q3'],['less than '+f[1],25,'Q1'],['between '+f[1]+' and '+f[3],50,'the box'],['greater than '+f[2],50,'the median'],['less than '+f[3],75,'Q3'],['greater than '+f[1],75,'Q1']]);
-    function P(v){ return v+'%'; }
-    var ch=[H.C(P(Qs[1]),Qs[1])]; [25,50,75,100].forEach(function(p){ if(p!==Qs[1]) ch.push(H.C(P(p),p,'Each part of a box plot (whisker or half-box) holds about 25% of the data.')); });
-    return { prompt:'About what percent of the data is '+Qs[0]+'?', visual:vis, choices:ch, check:function(v){ return v===Qs[1]; },
-      explain:'A box plot splits the data into four parts of about 25% each. '+H.ans(P(Qs[1]))+'.' }; },
-  dataCompare:function(){ var lo=0, span=H.pick([20,40]); H.boxSpan=span; var a=five(lo,span), b=five(lo,span); if(!a||!b) return null;
-    var st={ median:[a[2],b[2]], range:[a[4]-a[0],b[4]-b[0]], IQR:[a[3]-a[1],b[3]-b[1]] }; if(Object.keys(st).some(function(k){ return st[k][0]===st[k][1]; })) return null;
-    var g=H.pick([['Class A','Class B'],['Team Red','Team Blue'],['7th grade','8th grade'],['Store 1','Store 2']]);
-    var s=axis(lo,span,330)+boxRow(a,130,lo,C.c,g[0])+boxRow(b,240,lo,C.p,g[1]);
-    var stmts=[]; Object.keys(st).forEach(function(k){ [0,1].forEach(function(w){ stmts.push({k:k,w:w,txt:g[w]+' has the greater '+k}); }); });
-    function tru(x){ return st[x.k][x.w]>st[x.k][1-x.w]; }
-    var T=stmts.filter(tru), Fz=stmts.filter(function(x){ return !tru(x); }), pick=H.pick(T);
-    var ch=[H.C(pick.txt,pick)]; Fz.forEach(function(x){ ch.push(H.C(x.txt,x,g[1-x.w]+'’s '+x.k+' is '+st[x.k][1-x.w]+', and '+g[x.w]+'’s is '+st[x.k][x.w]+'.')); });
-    return { prompt:'Which statement is true?', visual:H.svg(s,'Two box plots'), choices:ch, check:tru,
-      explain:(pick.k==='IQR'?'IQR':pick.k.charAt(0).toUpperCase()+pick.k.slice(1))+': '+g[0]+' '+st[pick.k][0]+', '+g[1]+' '+st[pick.k][1]+'. '+H.ans(pick.txt)+'.' }; },
-  dataSample:function(){ if(H.chance(0.6)){ var n=H.pick([20,25,40,50,60,80]), k=H.ri(3,n-3), N=H.pick([400,500,600,800,1200,1000,300]), ans=N*k/n; if(ans%1) return null;
-      var it=H.pick([['students','prefer pizza for lunch'],['students','walk to school'],['fans','want a new mascot'],['shoppers','use the self-checkout']]);
-      var cands=[[N-ans,'That’s the number who don’t. Use '+k+' out of '+n+'.'],[N*k/100,'The sample has '+n+' people, not 100.'],[k*(N/100),'Set up '+k+'/'+n+' = ?/'+H.num(N)+'.'],[ans+k,'Use the ratio '+k+'/'+n+'.']];
-      return { prompt:'In a random sample of '+n+' '+it[0]+', '+k+' '+it[1]+'. There are '+H.num(N)+' '+it[0]+' in all. About how many '+it[1]+'?',
-        choices:H.choices(H.C(H.num(ans),ans),cands,function(v){ return Number.isInteger(v)?H.num(v):null; },function(v){ return v>0; }), check:function(v){ return v*n===N*k; },
-        explain:H.eq(k+'/'+n+' × '+H.num(N)+' = '+H.ans(H.num(ans)))+'.' }; }
-    var S=H.pick([
-      {q:'The principal wants to know what <b>all students</b> think about lunch. Which sample is random?', ok:'Names drawn from all students', bad:[['Students on the football team','Only one group: it leaves others out.'],['The first 30 in the lunch line','Only students who buy lunch, and only the early ones.'],['Students who volunteer online','Only students who choose to answer.']]},
-      {q:'A city wants to know how <b>all residents</b> feel about a new park. Which sample is random?', ok:'Every 10th name on the city list',  bad:[['People at the dog park','They already use parks.'],['Residents who call in to a radio show','Only people who choose to call.'],['Members of the soccer club','Only one group of people.']]},
-      {q:'A store wants to know what <b>all its customers</b> like. Which sample is random?', ok:'50 receipt numbers drawn at random', bad:[['Customers who fill out a survey','Only people who choose to answer.'],['Shoppers on Saturday morning','Only one time, so it leaves others out.'],['The store’s employees','They aren’t a fair picture of customers.']]} ]);
-    var ch=[H.C(S.ok,'ok')]; S.bad.forEach(function(b,i){ ch.push(H.C(b[0],'b'+i,'That sample is biased. '+b[1])); });
-    return { prompt:S.q, choices:ch, check:function(v){ return v==='ok'; }, explain:'Everyone has the same chance of being picked: '+H.ans(S.ok)+'.' }; }
-  };
-}
-
-/* ---------------- the sets ----------------
-   id: { name, teks, make, topics:[[topic id, topic name, [generator names], weight]] }
-   Never reorder topics or sets once students have score codes: scorecode.js packs them by position. At most 15 sets, 4 topics each. */
-function maker(G,id){ return function(PFX){ var H=helpers(PFX); return { build:builder(G(H),id) }; }; }
-var SETS={
-  rat:{ name:'Rational number operations', teks:'7.3A', make:maker(G_rat,'rat'), topics:[['add','Adding',['ratAdd']],['sub','Subtracting',['ratSub']],['mul','Multiplying',['ratMul']],['div','Dividing',['ratDiv']]] },
-  wp:{ name:'Rational number problems', teks:'7.3B', make:maker(G_wp,'wp'), topics:[['int','Integers in context',['wpTemp','wpDiff','wpElev']],['money','Money & decimals',['wpBuy','wpBank','wpSplit']],['frac','Fractions in context',['wpRecipe','wpRope','wpTrail']]] },
-  nums:{ name:'Sets of numbers', teks:'7.2', make:maker(G_nums,'nums'), topics:[['classify','Classify the number',['numClassify']],['find','Find the number',['numFind']],['venn','Venn diagram',['numVenn']]] },
-  rate:{ name:'Rates & proportionality', teks:'7.4A–C', make:maker(G_rate,'rate'), topics:[['unit','Unit rates',['rateUnit','rateComplex']],['best','Best buy',['rateBest']],['k','Constant of proportionality',['rateKTable','rateKGraph']],['eq','Equations y = kx',['rateEq']]] },
-  pct:{ name:'Percents', teks:'7.4D', make:maker(G_pct,'pct'), topics:[['of','Percent of a number',['pctOf','pctWhole']],['change','Percent change',['pctChange','pctApply']],['disc','Discounts & markups',['pctDisc','pctMarkup','pctDeal']],['tax','Tax & tip',['pctTax','pctTip']]] },
-  conv:{ name:'Converting units', teks:'7.4E', make:maker(G_conv,'conv'), topics:[['len','Customary length',['convLen']],['wc','Weight & capacity',['convWC']],['met','Metric',['convMet']]] },
-  scale:{ name:'Scale drawings & similar figures', teks:'7.5A, 7.5C', make:maker(G_scale,'scale'), topics:[['map','Scale drawings',['scaleActual','scaleDraw']],['sim','Similar figures',['scaleSimilar']],['factor','Scale factor',['scaleFactor']]] },
-  circ:{ name:'Circles', teks:'7.5B, 7.9B', make:maker(G_circ,'circ'), topics:[['circ','Circumference',['circC']],['area','Area',['circA']],['back','Working backward',['circBack']]] },
-  geo:{ name:'Area & volume', teks:'7.8A, 7.9A, 7.9C, 7.9D', make:maker(G_geo,'geo'), topics:[['prism','Volume of prisms',['geoPrism']],['pyr','Volume of pyramids',['geoPyr']],['comp','Composite figures',['geoComp']],['sa','Surface area',['geoSA']]] },
-  eqin:{ name:'Equations & inequalities', teks:'7.10A–B, 7.11A–B', make:maker(G_eqin,'eqin'), topics:[['eq','Solve equations',['eqSolve']],['ineq','Solve inequalities',['ineqSolve']],['line','Number lines',['ineqLine']],['write','Write from words',['eqWrite']]] },
-  angle:{ name:'Angle relationships', teks:'7.11C', make:maker(G_angle,'angle'), topics:[['comp','Complementary',['angComp']],['supp','Supplementary',['angSupp']],['vert','Vertical angles',['angVert']],['tri','Triangles',['angTri']]] },
-  prob:{ name:'Probability', teks:'7.6A, C–E, H–I', make:maker(G_prob,'prob'), topics:[['simple','Simple events',['probSimple']],['comp','Compound events',['probComp']],['pred','Predictions',['probPred']],['exp','Experimental vs theoretical',['probExp']]] },
-  lin:{ name:'Linear relationships', teks:'7.7A', make:maker(G_lin,'lin'), topics:[['table','From a table',['linTable']],['words','From words',['linWords']],['graph','From a graph',['linGraph']],['value','Find a value',['linValue']]] },
-  fin:{ name:'Personal finance', teks:'7.13A–E', make:maker(G_fin,'fin'), topics:[['tax','Income & sales tax',['finTax']],['worth','Assets & net worth',['finWorth']],['int','Simple & compound interest',['finInterest']],['budget','Budgets',['finBudget']]] },
-  data:{ name:'Data & samples', teks:'7.6G, 7.12A–C', make:maker(G_data,'data'), topics:[['dot','Dot plots',['dataDot']],['box','Box plots',['dataBox']],['comp','Compare two groups',['dataCompare']],['sample','Samples & predictions',['dataSample']]] }
+/* ---------- rational numbers (7.3A, 7.3B) ---------- */
+Q.intAddSub = () => {
+  const a = nz(-20, 20), b = nz(-20, 20), add = Math.random() < 0.5;
+  const ans = add ? a + b : a - b, A = Math.abs(a), B = Math.abs(b), hi = Math.max(A, B), lo = Math.min(A, B);
+  let ex, hint; const mistakes = [];
+  if (!add) {
+    ex = L(`Subtracting is adding the opposite: ${num(a)} ${MINUS} ${paren(b)} = ${num(a)} + ${paren(-b)} = ${num(ans)}.`,
+           `Restar es sumar el opuesto: ${num(a)} ${MINUS} ${paren(b)} = ${num(a)} + ${paren(-b)} = ${num(ans)}.`);
+    hint = L(`Change the subtraction to adding the opposite: ${num(a)} + ${paren(-b)}.`, `Cambia la resta a sumar el opuesto: ${num(a)} + ${paren(-b)}.`);
+    if (b < 0) mistakes.push(mk(a + b, L(`Subtracting a negative is the same as adding a positive: ${num(a)} ${MINUS} ${paren(b)} = ${num(a)} + ${B}.`,
+                                         `Restar un negativo es lo mismo que sumar un positivo: ${num(a)} ${MINUS} ${paren(b)} = ${num(a)} + ${B}.`)));
+    else mistakes.push(mk(a + b, L(`You added. This problem subtracts ${b}, which means adding ${paren(-b)}.`, `Sumaste. Este problema resta ${b}, que es lo mismo que sumar ${paren(-b)}.`)));
+  } else if ((a < 0) === (b < 0)) {
+    ex = L(`Same signs: add ${A} + ${B} and keep the sign. The answer is ${num(ans)}.`, `Mismo signo: suma ${A} + ${B} y conserva el signo. La respuesta es ${num(ans)}.`);
+    hint = L(`Both numbers have the same sign. Add ${A} + ${B}, then keep that sign.`, `Los dos números tienen el mismo signo. Suma ${A} + ${B} y conserva ese signo.`);
+  } else {
+    ex = L(`Different signs: subtract ${hi} ${MINUS} ${lo} and keep the sign of the number farther from zero. The answer is ${num(ans)}.`,
+           `Signos diferentes: resta ${hi} ${MINUS} ${lo} y conserva el signo del número más lejano del cero. La respuesta es ${num(ans)}.`);
+    hint = L(`The signs are different, so subtract the sizes: ${hi} ${MINUS} ${lo}. Which number is farther from zero? Its sign wins.`,
+             `Los signos son diferentes, así que resta los valores absolutos: ${hi} ${MINUS} ${lo}. ¿Cuál número está más lejos del cero? Su signo gana.`);
+    mistakes.push(mk(Math.sign(ans || 1) * (A + B), L(`When the signs are different, subtract the sizes (${hi} ${MINUS} ${lo}) instead of adding them.`,
+                                                       `Cuando los signos son diferentes, resta los valores absolutos (${hi} ${MINUS} ${lo}) en lugar de sumarlos.`)));
+  }
+  return { html: `${num(a)} ${add ? '+' : MINUS} ${paren(b)}`, answer: ans, answerText: num(ans), explain: ex, hint, mistakes };
+};
+Q.intMulDiv = () => {
+  const a = nzBig(-12, 12), b = nzBig(-12, 12);
+  if (Math.random() < 0.5) {
+    const ans = a * b;
+    return { html: `${num(a)} × ${paren(b)}`, answer: ans, answerText: num(ans),
+      explain: L(`${Math.abs(a)} × ${Math.abs(b)} = ${Math.abs(ans)}. ${signRuleL(a, b).en} The answer is ${num(ans)}.`,
+                 `${Math.abs(a)} × ${Math.abs(b)} = ${Math.abs(ans)}. ${signRuleL(a, b).es} La respuesta es ${num(ans)}.`),
+      hint: L(`First multiply the sizes: ${Math.abs(a)} × ${Math.abs(b)}. Then decide the sign: are the signs the same or different?`,
+              `Primero multiplica los valores absolutos: ${Math.abs(a)} × ${Math.abs(b)}. Luego decide el signo: ¿los signos son iguales o diferentes?`),
+      mistakes: [mk(a + b, L('You added the numbers. This one asks you to multiply.', 'Sumaste los números. Este problema pide multiplicar.'))] };
+  }
+  const p = a * b;
+  return { html: `${num(p)} ÷ ${paren(b)}`, answer: a, answerText: num(a),
+    explain: L(`${Math.abs(p)} ÷ ${Math.abs(b)} = ${Math.abs(a)}. ${signRuleL(p, b).en} The answer is ${num(a)}.`,
+               `${Math.abs(p)} ÷ ${Math.abs(b)} = ${Math.abs(a)}. ${signRuleL(p, b).es} La respuesta es ${num(a)}.`),
+    hint: L(`Divide the sizes: ${Math.abs(p)} ÷ ${Math.abs(b)}. Then use the sign rule: same signs give a positive, different signs give a negative.`,
+            `Divide los valores absolutos: ${Math.abs(p)} ÷ ${Math.abs(b)}. Luego usa la regla de los signos: signos iguales dan positivo y signos diferentes dan negativo.`),
+    mistakes: [] };
+};
+Q.decimal = () => {
+  let A; do { A = ri(11, 99) * sgn(); } while (A % 10 === 0);
+  const op = pick(['+', MINUS, '×']);
+  if (op === '×') {
+    const b = nzBig(-9, 9), ans = (A * b) / 10;
+    return { html: `${num(A / 10)} × ${paren(b)}`, answer: ans, answerText: num(ans),
+      explain: L(`${Math.abs(A / 10)} × ${Math.abs(b)} = ${num(Math.abs(ans))}. ${signRuleL(A, b).en} The answer is ${num(ans)}.`,
+                 `${Math.abs(A / 10)} × ${Math.abs(b)} = ${num(Math.abs(ans))}. ${signRuleL(A, b).es} La respuesta es ${num(ans)}.`),
+      hint: L(`Multiply ${Math.abs(A)} × ${Math.abs(b)} as whole numbers, then put back one decimal place.`,
+              `Multiplica ${Math.abs(A)} × ${Math.abs(b)} como números enteros y luego vuelve a poner un lugar decimal.`),
+      mistakes: [mk(ans * 10, L('Check the decimal point. The problem has one decimal place, so the answer needs one too.', 'Revisa el punto decimal. El problema tiene un lugar decimal, así que la respuesta también necesita uno.')),
+                 mk(ans / 10, L('Check the decimal point. You moved it one place too far.', 'Revisa el punto decimal. Lo moviste un lugar de más.'))] };
+  }
+  let B; do { B = ri(11, 99) * sgn(); } while (B % 10 === 0);
+  const ans = op === '+' ? (A + B) / 10 : (A - B) / 10;
+  const ex = op === MINUS ? L(`Add the opposite: ${num(A / 10)} + ${paren(-B / 10)} = ${num(ans)}.`, `Suma el opuesto: ${num(A / 10)} + ${paren(-B / 10)} = ${num(ans)}.`)
+    : L(`Line up the decimal points and use the sign rules for adding: ${num(A / 10)} + ${paren(B / 10)} = ${num(ans)}.`,
+        `Alinea los puntos decimales y usa las reglas de los signos para sumar: ${num(A / 10)} + ${paren(B / 10)} = ${num(ans)}.`);
+  const mistakes = [];
+  if (op === MINUS) mistakes.push(mk((A + B) / 10, L(`Subtracting means adding the opposite: ${num(A / 10)} + ${paren(-B / 10)}.`, `Restar es sumar el opuesto: ${num(A / 10)} + ${paren(-B / 10)}.`)));
+  return { html: `${num(A / 10)} ${op} ${paren(B / 10)}`, answer: ans, answerText: num(ans), explain: ex, mistakes,
+    hint: op === MINUS ? L(`Rewrite it as adding the opposite: ${num(A / 10)} + ${paren(-B / 10)}. Then use the integer sign rules.`,
+                           `Escríbelo como sumar el opuesto: ${num(A / 10)} + ${paren(-B / 10)}. Luego usa las reglas de los signos de los enteros.`)
+      : L('Line up the decimal points. If the signs are different, subtract the sizes and keep the sign of the larger one.',
+          'Alinea los puntos decimales. Si los signos son diferentes, resta los valores absolutos y conserva el signo del mayor.') };
+};
+Q.fracAddSub = () => {
+  const dens = [2, 3, 4, 5, 6, 8, 10, 12];
+  let d1, d2; do { d1 = pick(dens); d2 = pick(dens); } while (lcm(d1, d2) > 24);
+  let n1 = nz(-(d1 - 1), d1 - 1), n2 = ri(1, d2 - 1) * sgn();
+  [n1, d1] = simp(n1, d1); [n2, d2] = simp(n2, d2);
+  const add = Math.random() < 0.5, Lc = lcm(d1, d2), m1 = n1 * Lc / d1, m2 = n2 * Lc / d2, rn = add ? m1 + m2 : m1 - m2;
+  const mistakes = [], simple = fracText(rn, Lc).split(' (')[0];
+  if (d1 !== d2) mistakes.push(mk((add ? n1 + n2 : n1 - n2) / (d1 + d2), L(`Don’t add the denominators. Rewrite both fractions with a common denominator (${Lc}) first, then combine only the numerators.`,
+                                                                          `No sumes los denominadores. Primero escribe las dos fracciones con un denominador común (${Lc}) y luego combina solo los numeradores.`)));
+  mistakes.push(mk((add ? n1 + n2 : n1 - n2) / Lc, L(`Close! When you change a denominator to ${Lc}, change the numerator too, by the same factor.`,
+                                                     `¡Casi! Cuando cambias un denominador a ${Lc}, también cambia el numerador por el mismo factor.`)));
+  return { html: `${fracHTML(n1, d1)} ${add ? '+' : MINUS} ${pfracHTML(n2, d2)}`, answer: rn / Lc, answerText: fracText(rn, Lc), mistakes,
+    explain: L(`Use a common denominator of ${Lc}: ${raw(m1, Lc)} ${add ? '+' : MINUS} ${praw(m2, Lc)} = ${raw(rn, Lc)}, which simplifies to ${simple}.`,
+               `Usa un denominador común de ${Lc}: ${raw(m1, Lc)} ${add ? '+' : MINUS} ${praw(m2, Lc)} = ${raw(rn, Lc)}, que se simplifica a ${simple}.`),
+    hint: L(`Find a common denominator. ${Lc} works for both ${d1} and ${d2}. Rewrite each fraction with ${Lc} on the bottom.`,
+            `Busca un denominador común. ${Lc} sirve para ${d1} y para ${d2}. Escribe cada fracción con ${Lc} abajo.`) };
+};
+Q.twoStep = () => {
+  if (Math.random() < 0.5) {
+    const a = nz(-10, 10), b = nz(-6, 6), c = nz(-6, 6), ans = a + b * c;
+    return { html: `${num(a)} + ${paren(b)} × ${paren(c)}`, answer: ans, answerText: num(ans),
+      explain: L(`Multiply first: ${paren(b)} × ${paren(c)} = ${num(b * c)}. Then ${num(a)} + ${paren(b * c)} = ${num(ans)}.`,
+                 `Primero multiplica: ${paren(b)} × ${paren(c)} = ${num(b * c)}. Luego ${num(a)} + ${paren(b * c)} = ${num(ans)}.`),
+      hint: L(`Order of operations: multiply ${paren(b)} × ${paren(c)} before you add.`, `Orden de las operaciones: multiplica ${paren(b)} × ${paren(c)} antes de sumar.`),
+      mistakes: [mk((a + b) * c, L('You worked left to right. Multiplication comes before addition, so multiply first.', 'Trabajaste de izquierda a derecha. La multiplicación va antes que la suma, así que multiplica primero.'))] };
+  }
+  const c = nzBig(-6, 6), q = nz(-8, 8), b = nz(-10, 10), a = q * c + b;
+  return { html: `(${num(a)} ${MINUS} ${paren(b)}) ÷ ${paren(c)}`, answer: q, answerText: num(q),
+    explain: L(`Parentheses first: ${num(a)} ${MINUS} ${paren(b)} = ${num(a - b)}. Then ${num(a - b)} ÷ ${paren(c)} = ${num(q)}.`,
+               `Primero los paréntesis: ${num(a)} ${MINUS} ${paren(b)} = ${num(a - b)}. Luego ${num(a - b)} ÷ ${paren(c)} = ${num(q)}.`),
+    hint: L(`Start inside the parentheses: ${num(a)} ${MINUS} ${paren(b)}. Remember, subtracting means adding the opposite.`,
+            `Empieza dentro de los paréntesis: ${num(a)} ${MINUS} ${paren(b)}. Recuerda, restar es sumar el opuesto.`),
+    mistakes: [mk((a + b) / c, L(`Inside the parentheses, subtracting ${paren(b)} means adding ${paren(-b)}.`, `Dentro de los paréntesis, restar ${paren(b)} es sumar ${paren(-b)}.`))] };
+};
+Q.decimalDiv = () => {
+  const D = ri(2, 9) * sgn(), q = nzBig(-12, 12);
+  return { html: `${num(q * D / 10)} ÷ ${paren(D / 10)}`, answer: q, answerText: num(q),
+    explain: L(`Multiply both numbers by 10 to clear the decimal: ${num(q * D)} ÷ ${paren(D)} = ${num(q)}.`, `Multiplica los dos números por 10 para quitar el decimal: ${num(q * D)} ÷ ${paren(D)} = ${num(q)}.`),
+    hint: L(`Move the decimal point one place right in both numbers: ${num(q * D)} ÷ ${paren(D)}.`, `Mueve el punto decimal un lugar a la derecha en los dos números: ${num(q * D)} ÷ ${paren(D)}.`),
+    mistakes: [mk(q / 10, L('Move the decimal point in both numbers by the same amount. That makes this a whole-number division.', 'Mueve el punto decimal la misma cantidad de lugares en los dos números. Así se convierte en una división de números enteros.')),
+               mk(q * 10, L('Check the decimal point. Move it the same number of places in both numbers.', 'Revisa el punto decimal. Muévelo la misma cantidad de lugares en los dos números.'))] };
+};
+Q.fracMulDiv = () => {
+  let d1 = pick([2, 3, 4, 5, 6, 8]), n1 = (ri(0, 2) * d1 + ri(1, d1 - 1)) * sgn();
+  let d2 = pick([2, 3, 4, 5, 6, 8, 9, 10]), n2 = ri(1, d2 - 1) * sgn();
+  [n1, d1] = simp(n1, d1); [n2, d2] = simp(n2, d2);
+  const mul = Math.random() < 0.5;
+  const rn = mul ? n1 * n2 : n1 * d2 * Math.sign(n2), rd = mul ? d1 * d2 : d1 * Math.abs(n2), simple = fracText(rn, rd).split(' (')[0];
+  const sr = signRuleL(n1, n2);
+  const ex = mul
+    ? L(`Write any mixed number as an improper fraction, then multiply straight across: ${praw(n1, d1)} × ${praw(n2, d2)} = ${raw(rn, rd)} = ${simple}. ${sr.en}`,
+        `Escribe cualquier número mixto como fracción impropia y luego multiplica en línea recta: ${praw(n1, d1)} × ${praw(n2, d2)} = ${raw(rn, rd)} = ${simple}. ${sr.es}`)
+    : L(`Multiply by the reciprocal: ${praw(n1, d1)} × ${praw(Math.sign(n2) * d2, Math.abs(n2))} = ${raw(rn, rd)} = ${simple}. ${sr.en}`,
+        `Multiplica por el recíproco: ${praw(n1, d1)} × ${praw(Math.sign(n2) * d2, Math.abs(n2))} = ${raw(rn, rd)} = ${simple}. ${sr.es}`);
+  const mistakes = mul ? [] : [mk((n1 * n2) / (d1 * d2), L('To divide by a fraction, multiply by its reciprocal. Flip the second fraction, then multiply.', 'Para dividir entre una fracción, multiplica por su recíproco. Voltea la segunda fracción y luego multiplica.'))];
+  const whole = Math.abs(n1) > d1;
+  return { html: `${mixedHTML(n1, d1)} ${mul ? '×' : '÷'} ${pfracHTML(n2, d2)}`, answer: rn / rd, answerText: fracText(rn, rd), explain: ex, mistakes,
+    hint: L(`${whole ? `Rewrite the mixed number as an improper fraction: ${raw(n1, d1)}. ` : ''}${mul ? 'Multiply the numerators, then the denominators.' : `Keep the first fraction, change ÷ to ×, and flip the second: ${raw(Math.sign(n2) * d2, Math.abs(n2))}.`}`,
+            `${whole ? `Escribe el número mixto como fracción impropia: ${raw(n1, d1)}. ` : ''}${mul ? 'Multiplica los numeradores y luego los denominadores.' : `Deja la primera fracción, cambia ÷ por × y voltea la segunda: ${raw(Math.sign(n2) * d2, Math.abs(n2))}.`}`) };
+};
+Q.word = () => {
+  const k = ri(0, 4);
+  if (k === 0) {
+    const t0 = -ri(3, 15), up = ri(8, 25), down = ri(5, 20), ans = t0 + up - down;
+    return { long: true, answer: ans, answerText: `${num(ans)}°F`,
+      html: L(`At 6 a.m. it was ${num(t0)}°F. The temperature rose ${up}°F by noon, then dropped ${down}°F by midnight. What was the temperature at midnight?`,
+              `A las 6 a.m. la temperatura era de ${num(t0)}°F. Subió ${up}°F para el mediodía y luego bajó ${down}°F para la medianoche. ¿Cuál era la temperatura a la medianoche?`),
+      explain: L(`${num(t0)} + ${up} ${MINUS} ${down} = ${num(ans)}°F.`, `${num(t0)} + ${up} ${MINUS} ${down} = ${num(ans)}°F.`),
+      hint: L(`Start at ${num(t0)}. Rising means add ${up}. Dropping means subtract ${down}.`, `Empieza en ${num(t0)}. Subir significa sumar ${up}. Bajar significa restar ${down}.`),
+      mistakes: [mk(t0 + up + down, L(`A drop means the temperature goes down, so subtract the ${down}.`, `Bajar significa que la temperatura disminuye, así que resta los ${down}.`)),
+                 mk(-t0 + up - down, L(`The starting temperature is negative: ${num(t0)}°F.`, `La temperatura inicial es negativa: ${num(t0)}°F.`))] };
+  }
+  if (k === 1) {
+    const start = -ri(20, 60), rate = pick([0.5, 1.5, 2.5, 3.5]); let t;
+    do { t = ri(2, 10); } while (rate * t > -start);
+    const ans = start + rate * t;
+    return { long: true, answer: ans, answerText: num(ans),
+      html: L(`A diver is at ${num(start)} feet. She rises ${rate} feet per second for ${t} seconds. What is her new elevation, in feet?`,
+              `Una buceadora está a ${num(start)} pies. Sube ${rate} pies por segundo durante ${t} segundos. ¿Cuál es su nueva elevación, en pies?`),
+      explain: L(`Rising adds: ${num(start)} + ${rate} × ${t} = ${num(start)} + ${num(rate * t)} = ${num(ans)} feet.`, `Subir es sumar: ${num(start)} + ${rate} × ${t} = ${num(start)} + ${num(rate * t)} = ${num(ans)} pies.`),
+      hint: L(`First find how far she rises: ${rate} × ${t}. Rising moves her toward the surface, so add that to ${num(start)}.`,
+              `Primero calcula cuánto sube: ${rate} × ${t}. Subir la acerca a la superficie, así que súmalo a ${num(start)}.`),
+      mistakes: [mk(start - rate * t, L('Rising means going up, toward 0. Add the distance instead of subtracting it.', 'Subir significa ir hacia arriba, hacia el 0. Suma la distancia en lugar de restarla.')),
+                 mk(rate * t, L(`That’s how far she rose. Add it to her starting elevation, ${num(start)}.`, `Eso es lo que subió. Súmalo a su elevación inicial, ${num(start)}.`))] };
+  }
+  if (k === 2) {
+    const bal = ri(20, 60) + pick([0, 0.25, 0.5, 0.75]), n = ri(2, 4), price = ri(9, 22) + pick([0.25, 0.5, 0.75]);
+    const ans = round2(bal - n * price);
+    return { long: true, answer: ans, answerText: money(ans),
+      html: L(`Jordan has ${money(bal)} in a bank account and buys ${n} items that cost ${money(price)} each. What is the balance now? Use a negative number if the account is overdrawn.`,
+              `Jordan tiene ${money(bal)} en una cuenta bancaria y compra ${n} artículos que cuestan ${money(price)} cada uno. ¿Cuál es el saldo ahora? Usa un número negativo si la cuenta queda en sobregiro.`),
+      explain: L(`${money(bal)} ${MINUS} ${n} × ${money(price)} = ${money(bal)} ${MINUS} ${money(n * price)} = ${money(ans)}.`, `${money(bal)} ${MINUS} ${n} × ${money(price)} = ${money(bal)} ${MINUS} ${money(n * price)} = ${money(ans)}.`),
+      hint: L(`Find the total cost first: ${n} × ${money(price)}. Then subtract it from ${money(bal)}.`, `Primero calcula el costo total: ${n} × ${money(price)}. Luego réstalo de ${money(bal)}.`),
+      mistakes: [mk(round2(bal - price), L(`Jordan bought ${n} items, so multiply the price by ${n} first.`, `Jordan compró ${n} artículos, así que primero multiplica el precio por ${n}.`)),
+                 mk(round2(n * price - bal), L('Start with the balance and subtract the cost. If the cost is bigger, the answer is negative.', 'Empieza con el saldo y resta el costo. Si el costo es mayor, la respuesta es negativa.'))] };
+  }
+  if (k === 3) {
+    const loss = ri(2, 8), plays = ri(2, 4), gain = ri(5, 25), ans = -loss * plays + gain;
+    return { long: true, answer: ans, answerText: num(ans),
+      html: L(`A football team loses ${loss} yards on each of ${plays} plays, then gains ${gain} yards on the next play. What is the team's total change in yards?`,
+              `Un equipo de fútbol americano pierde ${loss} yardas en cada una de ${plays} jugadas y luego gana ${gain} yardas en la siguiente jugada. ¿Cuál es el cambio total del equipo en yardas?`),
+      explain: L(`${plays} × (${MINUS}${loss}) + ${gain} = ${num(-loss * plays)} + ${gain} = ${num(ans)} yards.`, `${plays} × (${MINUS}${loss}) + ${gain} = ${num(-loss * plays)} + ${gain} = ${num(ans)} yardas.`),
+      hint: L(`A loss is negative. Find ${plays} × (${MINUS}${loss}) first, then add the ${gain}-yard gain.`, `Una pérdida es negativa. Primero calcula ${plays} × (${MINUS}${loss}) y luego suma la ganancia de ${gain} yardas.`),
+      mistakes: [mk(loss * plays + gain, L(`Losing yards is a negative change. Each loss is ${MINUS}${loss}.`, `Perder yardas es un cambio negativo. Cada pérdida es ${MINUS}${loss}.`)),
+                 mk(-loss + gain, L(`The team lost ${loss} yards on each of ${plays} plays, so multiply first.`, `El equipo perdió ${loss} yardas en cada una de ${plays} jugadas, así que multiplica primero.`))] };
+  }
+  const start = -ri(15, 60), rate = ri(2, 6), t = ri(3, 9), ans = start - rate * t;
+  return { long: true, answer: ans, answerText: num(ans),
+    html: L(`A submarine is at ${num(start)} meters. It goes down ${rate} meters per minute for ${t} minutes. What is its new elevation, in meters?`,
+            `Un submarino está a ${num(start)} metros. Baja ${rate} metros por minuto durante ${t} minutos. ¿Cuál es su nueva elevación, en metros?`),
+    explain: L(`Going down subtracts: ${num(start)} ${MINUS} ${rate} × ${t} = ${num(start)} ${MINUS} ${rate * t} = ${num(ans)} meters.`, `Bajar es restar: ${num(start)} ${MINUS} ${rate} × ${t} = ${num(start)} ${MINUS} ${rate * t} = ${num(ans)} metros.`),
+    hint: L(`Find how far it goes down: ${rate} × ${t}. Going down makes the elevation more negative.`, `Calcula cuánto baja: ${rate} × ${t}. Bajar hace que la elevación sea más negativa.`),
+    mistakes: [mk(start + rate * t, L('Going down makes the elevation more negative, so subtract.', 'Bajar hace que la elevación sea más negativa, así que resta.')),
+               mk(-rate * t, L(`That’s how far it went down. Start from ${num(start)}.`, `Eso es lo que bajó. Empieza desde ${num(start)}.`))] };
 };
 
-function plain(h){ return String(h).replace(/<span class="[a-z]+-fr"><span>(.*?)<\/span><span>(.*?)<\/span><\/span>/g,'$1/$2').replace(/<[^>]+>/g,''); }
-function params(){ var qs={}; try{ (location.search||'').replace(/^\?/,'').split('&').forEach(function(kv){ var p=kv.split('='); if(p[0]) qs[decodeURIComponent(p[0])]=decodeURIComponent(p[1]||''); }); }catch(e){} return qs; }
+/* ---------- proportionality (7.4A–E, 7.5C, 7.13E) ---------- */
+Q.unitRate = () => {
+  if (Math.random() < 0.6) {
+    const [pl, one, plEs, oneEs, g] = pick([['tacos', 'taco', 'tacos', 'taco', 'o'], ['notebooks', 'notebook', 'cuadernos', 'cuaderno', 'o'], ['bags of chips', 'bag of chips', 'bolsas de papitas', 'bolsa de papitas', 'a'],
+      ['bottles of water', 'bottle of water', 'botellas de agua', 'botella de agua', 'a'], ['packs of gum', 'pack of gum', 'paquetes de chicle', 'paquete de chicle', 'o']]);
+    const per = pick([0.75, 1.25, 1.5, 2, 2.25, 2.5, 3, 3.5]), n = ri(3, 8), total = per * n;
+    return { long: true, answer: per, answerText: money(per),
+      html: L(`${n} ${pl} cost ${money(total)}. What is the cost of 1 ${one}?`, `${n} ${plEs} cuestan ${money(total)}. ¿Cuánto cuesta ${g === 'a' ? 'una' : 'un'} ${oneEs}?`),
+      explain: L(`Unit rate means "for 1." ${money(total)} ÷ ${n} = ${money(per)} per ${one}.`, `Tasa unitaria significa "por 1." ${money(total)} ÷ ${n} = ${money(per)} por ${oneEs}.`),
+      hint: L(`To find the cost of 1, divide the total cost by the number of ${pl}.`, `Para hallar el costo de 1, divide el costo total entre el número de ${plEs}.`),
+      mistakes: [mk(round2(total * n), L('Divide, don’t multiply. The cost of 1 is less than the total.', 'Divide, no multipliques. El costo de 1 es menor que el total.')),
+                 mk(round2(n / total), L(`Put the total cost first: ${money(total)} ÷ ${n}.`, `Pon primero el costo total: ${money(total)} ÷ ${n}.`))] };
+  }
+  const [what, unit, per, whatEs, unitEs, unitArt, perEs, perArt, perOneEs] = pick([
+    ['A car travels', 'miles', 'hours', 'Un carro recorre', 'millas', 'las', 'horas', 'las', 'hora'],
+    ['A printer prints', 'pages', 'minutes', 'Una impresora imprime', 'páginas', 'las', 'minutos', 'los', 'minuto'],
+    ['A pump moves', 'gallons', 'minutes', 'Una bomba mueve', 'galones', 'los', 'minutos', 'los', 'minuto']]);
+  const rate = ri(12, 70), t = ri(2, 6), one = per.slice(0, -1), cuantos = unitArt === 'las' ? 'Cuántas' : 'Cuántos';
+  return { long: true, answer: rate, answerText: num(rate),
+    html: L(`${what} ${rate * t} ${unit} in ${t} ${per} at a steady rate. How many ${unit} is that per ${one}?`, `${whatEs} ${rate * t} ${unitEs} en ${t} ${perEs} a una tasa constante. ¿${cuantos} ${unitEs} son por ${perOneEs}?`),
+    explain: L(`${rate * t} ÷ ${t} = ${rate} ${unit} per ${one}.`, `${rate * t} ÷ ${t} = ${rate} ${unitEs} por ${perOneEs}.`),
+    hint: L(`"Per ${one}" means for 1 ${one}. Divide the ${unit} by the ${per}.`, `"Por ${perOneEs}" significa en 1 ${perOneEs}. Divide ${unitArt} ${unitEs} entre ${perArt} ${perEs}.`),
+    mistakes: [mk(rate * t * t, L(`Divide by ${t}, don’t multiply.`, `Divide entre ${t}, no multipliques.`))] };
+};
+Q.equivRatio = () => {
+  let a, b; do { a = ri(1, 8); b = ri(a + 1, 12); } while (gcd(a, b) !== 1);
+  const m = ri(2, 6), x = `<span class="fr"><span class="fn">x</span><span class="fd">${b * m}</span></span>`, ask = L('What is x?', '¿Cuánto vale x?');
+  if (Math.random() < 0.5) {
+    const top = `<span class="fr"><span class="fn">${a}</span><span class="fd">${b}</span></span> = ${x}<br>`;
+    return { html: L(`${top}<span class="small">${ask.en}</span>`, `${top}<span class="small">${ask.es}</span>`), answer: a * m, answerText: num(a * m),
+      explain: L(`${b} × ${m} = ${b * m}, so multiply the top by ${m} too: ${a} × ${m} = ${a * m}.`, `${b} × ${m} = ${b * m}, así que también multiplica el numerador por ${m}: ${a} × ${m} = ${a * m}.`),
+      hint: L(`What do you multiply ${b} by to get ${b * m}? Do the same to the top.`, `¿Por cuánto multiplicas ${b} para obtener ${b * m}? Haz lo mismo con el numerador.`),
+      mistakes: [mk(a + (b * m - b), L(`Equivalent ratios scale by multiplying, not adding. ${b} was multiplied by ${m}.`, `Las razones equivalentes se obtienen multiplicando, no sumando. ${b} se multiplicó por ${m}.`))] };
+  }
+  const top = `<span class="fr"><span class="fn">${a}</span><span class="fd">${b}</span></span> = <span class="fr"><span class="fn">${a * m}</span><span class="fd">x</span></span><br>`;
+  return { html: L(`${top}<span class="small">${ask.en}</span>`, `${top}<span class="small">${ask.es}</span>`), answer: b * m, answerText: num(b * m),
+    explain: L(`${a} × ${m} = ${a * m}, so multiply the bottom by ${m} too: ${b} × ${m} = ${b * m}.`, `${a} × ${m} = ${a * m}, así que también multiplica el denominador por ${m}: ${b} × ${m} = ${b * m}.`),
+    hint: L(`What do you multiply ${a} by to get ${a * m}? Do the same to the bottom.`, `¿Por cuánto multiplicas ${a} para obtener ${a * m}? Haz lo mismo con el denominador.`),
+    mistakes: [mk(b + (a * m - a), L(`Equivalent ratios scale by multiplying, not adding. ${a} was multiplied by ${m}.`, `Las razones equivalentes se obtienen multiplicando, no sumando. ${a} se multiplicó por ${m}.`))] };
+};
+Q.easyPercent = () => {
+  const p = pick([10, 20, 25, 50, 75]), f = { 10: '1/10', 20: '1/5', 25: '1/4', 50: '1/2', 75: '3/4' }[p];
+  const unit = 100 / gcd(p, 100), n = unit * ri(2, 14), ans = p * n / 100;
+  return { html: L(`What is ${p}% of ${n}?`, `¿Cuánto es el ${p}% de ${n}?`), answer: ans, answerText: num(ans),
+    explain: L(`${p}% is the same as ${f}. ${f} of ${n} is ${num(ans)}.`, `El ${p}% es lo mismo que ${f}. ${f} de ${n} es ${num(ans)}.`),
+    hint: L(`${p}% is the same as the fraction ${f}. What is ${f} of ${n}?`, `El ${p}% es lo mismo que la fracción ${f}. ¿Cuánto es ${f} de ${n}?`),
+    mistakes: [mk(p * n, L('Percent means "per hundred," so divide by 100.', 'Por ciento significa "por cada cien," así que divide entre 100.')),
+               mk(n - ans, L(`That’s what’s left after taking ${p}%. The question asks for the ${p}% itself.`, `Eso es lo que queda después de quitar el ${p}%. La pregunta pide el ${p}% en sí.`))] };
+};
+Q.constantK = () => {
+  const k = pick([2, 3, 4, 5, 6, 1.5, 2.5, 0.5, 0.25]);
+  const pool = k === 0.25 ? [4, 8, 12, 16, 20] : [2, 4, 6, 8, 10, 12];
+  const xs = []; while (xs.length < 3) { const v = pick(pool); if (!xs.includes(v)) xs.push(v); }
+  xs.sort((p, q) => p - q);
+  const tbl = `<table class="qtable"><tr><th>x</th>${xs.map(v => `<td>${v}</td>`).join('')}</tr><tr><th>y</th>${xs.map(v => `<td>${num(v * k)}</td>`).join('')}</tr></table>`;
+  return { long: true, answer: k, answerText: k < 1 ? `${num(k)} (or ${k === 0.5 ? '1/2' : '1/4'})` : k % 1 ? `${num(k)} (or ${k * 2}/2)` : num(k),
+    html: L(`y is proportional to x.${tbl}What is the constant of proportionality, k, in y = kx?`, `y es proporcional a x.${tbl}¿Cuál es la constante de proporcionalidad, k, en y = kx?`),
+    explain: L(`k = y ÷ x. Using the first column: ${num(xs[0] * k)} ÷ ${xs[0]} = ${num(k)}. Every column gives the same k.`, `k = y ÷ x. Con la primera columna: ${num(xs[0] * k)} ÷ ${xs[0]} = ${num(k)}. Todas las columnas dan la misma k.`),
+    hint: L('Pick any column and divide y by x.', 'Escoge cualquier columna y divide y entre x.'),
+    mistakes: [mk(1 / k, L('k = y ÷ x, not x ÷ y. Put y on top.', 'k = y ÷ x, no x ÷ y. Pon y arriba.')),
+               mk(xs[1] * k - xs[0] * k, L('That’s how much y changes between columns. Divide y by x instead.', 'Eso es lo que cambia y entre columnas. Mejor divide y entre x.'))] };
+};
+Q.percentOf = () => {
+  const p = pick([5, 15, 30, 35, 40, 45, 60, 65, 85]), n = 20 * ri(1, 20), ans = p * n / 100;
+  return { html: L(`What is ${p}% of ${n}?`, `¿Cuánto es el ${p}% de ${n}?`), answer: ans, answerText: num(ans),
+    explain: L(`${p}% = ${num(p / 100)}. ${num(p / 100)} × ${n} = ${num(ans)}.`, `${p}% = ${num(p / 100)}. ${num(p / 100)} × ${n} = ${num(ans)}.`),
+    hint: L(`Write ${p}% as a decimal (${num(p / 100)}), then multiply by ${n}. Or find 10% first and build from there.`, `Escribe el ${p}% como decimal (${num(p / 100)}) y luego multiplica por ${n}. O calcula primero el 10% y parte de ahí.`),
+    mistakes: [mk(p * n, L(`Percent means "per hundred," so ${p}% is ${num(p / 100)}, not ${p}.`, `Por ciento significa "por cada cien," así que el ${p}% es ${num(p / 100)}, no ${p}.`)),
+               mk(n / p, L(`Multiply by ${p}% instead of dividing.`, `Multiplica por el ${p}% en lugar de dividir.`))] };
+};
+Q.salesTax = () => {
+  const [item, itemEs] = pick([['pair of headphones', 'Unos audífonos cuestan'], ['jacket', 'Una chaqueta cuesta'], ['video game', 'Un videojuego cuesta'], ['backpack', 'Una mochila cuesta'], ['pair of sneakers', 'Unos tenis cuestan']]);
+  const price = 4 * ri(5, 30), tax = round2(price * 0.0825), total = round2(price + tax);
+  return { long: true, answer: total, answerText: money(total),
+    html: L(`A ${item} costs ${money(price)}. With 8.25% sales tax, what is the total cost?`, `${itemEs} ${money(price)}. Con un impuesto sobre las ventas del 8.25%, ¿cuál es el costo total?`),
+    explain: L(`Tax: 0.0825 × ${money(price)} = ${money(tax)}. Total: ${money(price)} + ${money(tax)} = ${money(total)}.`, `Impuesto: 0.0825 × ${money(price)} = ${money(tax)}. Total: ${money(price)} + ${money(tax)} = ${money(total)}.`),
+    hint: L(`Find the tax first: 8.25% = 0.0825, so multiply 0.0825 × ${money(price)}. Then add it to the price.`, `Primero calcula el impuesto: 8.25% = 0.0825, así que multiplica 0.0825 × ${money(price)}. Luego súmalo al precio.`),
+    mistakes: [mk(tax, L('That’s just the tax. Add it to the price for the total cost.', 'Eso es solo el impuesto. Súmalo al precio para obtener el costo total.')),
+               mk(round2(price + 8.25), L(`8.25% of the price isn’t $8.25. Multiply ${money(price)} × 0.0825.`, `El 8.25% del precio no es $8.25. Multiplica ${money(price)} × 0.0825.`))] };
+};
+Q.tip = () => {
+  const bill = ri(14, 64), p = pick([15, 20]), tip = round2(bill * p / 100);
+  return { long: true, answer: tip, answerText: money(tip),
+    html: L(`A family's dinner costs ${money(bill)}. How much is a ${p}% tip?`, `La cena de una familia cuesta ${money(bill)}. ¿De cuánto es una propina del ${p}%?`),
+    explain: L(`${p}% = ${num(p / 100)}. ${num(p / 100)} × ${money(bill)} = ${money(tip)}.`, `${p}% = ${num(p / 100)}. ${num(p / 100)} × ${money(bill)} = ${money(tip)}.`),
+    hint: p === 20 ? L('Find 10% by moving the decimal one place left, then double it.', 'Calcula el 10% moviendo el punto decimal un lugar a la izquierda y luego duplícalo.')
+      : L('Find 10%, then add half of that 10% to get 15%.', 'Calcula el 10% y luego suma la mitad de ese 10% para obtener el 15%.'),
+    mistakes: [mk(round2(bill + tip), L('The question asks for just the tip, not the total.', 'La pregunta pide solo la propina, no el total.')),
+               mk(round2(bill * p), L(`${p}% means ${num(p / 100)}. Divide by 100.`, `El ${p}% significa ${num(p / 100)}. Divide entre 100.`))] };
+};
+Q.scale = () => {
+  const s = pick([2, 4, 5, 8, 10]), d = ri(3, 14) / 2, ans = d * s;
+  return { long: true, answer: ans, answerText: num(ans),
+    html: L(`On a floor plan, 1 inch represents ${s} feet. A room is ${num(d)} inches long on the plan. How long is the real room, in feet?`,
+            `En un plano, 1 pulgada representa ${s} pies. Un cuarto mide ${num(d)} pulgadas de largo en el plano. ¿Cuánto mide el cuarto real, en pies?`),
+    explain: L(`Each inch is ${s} feet, so ${num(d)} × ${s} = ${num(ans)} feet.`, `Cada pulgada es ${s} pies, así que ${num(d)} × ${s} = ${num(ans)} pies.`),
+    hint: L(`Every 1 inch on the plan is ${s} real feet. How many groups of ${s} do ${num(d)} inches make?`, `Cada pulgada del plano son ${s} pies reales. ¿Cuántos grupos de ${s} forman ${num(d)} pulgadas?`),
+    mistakes: [mk(d / s, L(`Each inch stands for ${s} feet, so the real room is bigger. Multiply.`, `Cada pulgada representa ${s} pies, así que el cuarto real es más grande. Multiplica.`)),
+               mk(d + s, L('Scale drawings multiply, they don’t add.', 'Los dibujos a escala se multiplican, no se suman.'))] };
+};
+Q.convert = () => {
+  const [fact, from, to, rate, factEs, fromEs, toEs, toF, fromF] = pick([
+    ['1 inch = 2.54 centimeters', 'inches', 'centimeters', 2.54, '1 pulgada = 2.54 centímetros', 'pulgadas', 'centímetros', false, true],
+    ['1 mile ≈ 1.6 kilometers', 'miles', 'kilometers', 1.6, '1 milla ≈ 1.6 kilómetros', 'millas', 'kilómetros', false, true],
+    ['1 kilogram ≈ 2.2 pounds', 'kilograms', 'pounds', 2.2, '1 kilogramo ≈ 2.2 libras', 'kilogramos', 'libras', true, false]]);
+  const n = ri(2, 12), ans = round2(n * rate);
+  return { long: true, answer: ans, answerText: num(ans),
+    html: L(`Use ${fact}. About how many ${to} are in ${n} ${from}?`, `Usa ${factEs}. ¿Aproximadamente ${toF ? 'cuántas' : 'cuántos'} ${toEs} hay en ${n} ${fromEs}?`),
+    explain: L(`Multiply by the conversion rate: ${n} × ${rate} = ${num(ans)} ${to}.`, `Multiplica por la tasa de conversión: ${n} × ${rate} = ${num(ans)} ${toEs}.`),
+    hint: L(`Each 1 of the ${from} is ${rate} ${to}. You have ${n} of them.`, `${fromF ? 'Cada una de las' : 'Cada uno de los'} ${fromEs} equivale a ${rate} ${toEs}. Tienes ${n}.`),
+    mistakes: [mk(round2(n / rate), L(`Each one of the ${from} equals ${rate} ${to}, so multiply.`, `${fromF ? 'Cada una de las' : 'Cada uno de los'} ${fromEs} equivale a ${rate} ${toEs}, así que multiplica.`))] };
+};
+Q.percentChange = () => {
+  const orig = 20 * ri(2, 15), p = pick([10, 20, 25, 30, 40, 50, 60, 75]), inc = Math.random() < 0.5;
+  const nw = inc ? orig + orig * p / 100 : orig - orig * p / 100, diff = Math.abs(nw - orig);
+  const game = Math.random() < 0.5;
+  const ctx = game ? L(`A game's price went from ${money(orig)} to ${money(nw)}.`, `El precio de un juego pasó de ${money(orig)} a ${money(nw)}.`)
+    : L(`A school club's followers went from ${orig} to ${nw}.`, `Los seguidores de un club escolar pasaron de ${orig} a ${nw}.`);
+  return { long: true, answer: p, answerText: `${p}%`,
+    html: L(`${ctx.en} What is the percent ${inc ? 'increase' : 'decrease'}? Answer as a percent.`, `${ctx.es} ¿Cuál es el porcentaje de ${inc ? 'aumento' : 'disminución'}? Responde con un porcentaje.`),
+    explain: L(`Find the change, then divide by the original amount: ${num(diff)} ÷ ${orig} = ${num(p / 100)} = ${p}%.`, `Halla el cambio y luego divide entre la cantidad original: ${num(diff)} ÷ ${orig} = ${num(p / 100)} = ${p}%.`),
+    hint: L(`First find the change: ${num(diff)}. Then divide by the original amount, ${orig}.`, `Primero halla el cambio: ${num(diff)}. Luego divide entre la cantidad original, ${orig}.`),
+    mistakes: [mk(diff, L('That’s the amount of change. Divide it by the original amount to get a percent.', 'Esa es la cantidad que cambió. Divídela entre la cantidad original para obtener el porcentaje.')),
+               mk(round2(diff / nw * 100), L('Divide by the original amount (where it started), not the new amount.', 'Divide entre la cantidad original (donde empezó), no entre la cantidad nueva.')),
+               mk(p / 100, L(`You found the decimal. Write it as a percent: ${num(p / 100)} = ${p}%.`, `Encontraste el decimal. Escríbelo como porcentaje: ${num(p / 100)} = ${p}%.`))] };
+};
+Q.discountTax = () => {
+  const d = pick([20, 25, 50]), orig = { 20: 20, 25: 16, 50: 8 }[d] * ri(2, 8);
+  const sale = orig * (1 - d / 100), tax = round2(sale * 0.0825), total = round2(sale + tax);
+  return { long: true, answer: total, answerText: money(total),
+    html: L(`Sneakers cost ${money(orig)} and are on sale for ${d}% off. Then 8.25% sales tax is added to the sale price. What is the final cost?`,
+            `Unos tenis cuestan ${money(orig)} y tienen ${d}% de descuento. Luego se agrega un impuesto sobre las ventas del 8.25% al precio de oferta. ¿Cuál es el costo final?`),
+    explain: L(`Sale price: ${money(orig)} ${MINUS} ${d}% = ${money(sale)}. Tax: 0.0825 × ${money(sale)} = ${money(tax)}. Total: ${money(total)}.`,
+               `Precio de oferta: ${money(orig)} ${MINUS} ${d}% = ${money(sale)}. Impuesto: 0.0825 × ${money(sale)} = ${money(tax)}. Total: ${money(total)}.`),
+    hint: L(`Two steps. First take ${d}% off ${money(orig)} to get the sale price. Then add 8.25% tax to that sale price.`,
+            `Dos pasos. Primero quita el ${d}% a ${money(orig)} para obtener el precio de oferta. Luego agrega el 8.25% de impuesto a ese precio.`),
+    mistakes: [mk(sale, L('That’s the sale price. Now add the 8.25% sales tax.', 'Ese es el precio de oferta. Ahora agrega el impuesto sobre las ventas del 8.25%.')),
+               mk(round2(sale + orig * 0.0825), L('The tax is figured on the sale price, not the original price.', 'El impuesto se calcula sobre el precio de oferta, no sobre el precio original.')),
+               mk(round2(orig * d / 100), L(`That’s the discount. Subtract it from ${money(orig)}.`, `Ese es el descuento. Réstalo de ${money(orig)}.`))] };
+};
+Q.markup = () => {
+  const cost = 2 * ri(4, 30), p = pick([25, 40, 50, 60, 75, 100]), price = round2(cost * (1 + p / 100));
+  return { long: true, answer: price, answerText: money(price),
+    html: L(`A store buys a hoodie for ${money(cost)} and marks the price up ${p}%. What is the selling price?`, `Una tienda compra una sudadera en ${money(cost)} y le aumenta el precio un ${p}%. ¿Cuál es el precio de venta?`),
+    explain: L(`Markup: ${num(p / 100)} × ${money(cost)} = ${money(cost * p / 100)}. Selling price: ${money(cost)} + ${money(cost * p / 100)} = ${money(price)}.`,
+               `Aumento: ${num(p / 100)} × ${money(cost)} = ${money(cost * p / 100)}. Precio de venta: ${money(cost)} + ${money(cost * p / 100)} = ${money(price)}.`),
+    hint: L(`Find ${p}% of ${money(cost)}. That’s the markup. Add it to the cost.`, `Calcula el ${p}% de ${money(cost)}. Ese es el aumento. Súmalo al costo.`),
+    mistakes: [mk(round2(cost * p / 100), L('That’s the markup amount. Add it to the cost for the selling price.', 'Esa es la cantidad del aumento. Súmala al costo para obtener el precio de venta.')),
+               mk(round2(cost - cost * p / 100), L('A markup raises the price. Add instead of subtracting.', 'Un aumento sube el precio. Suma en lugar de restar.'))] };
+};
+Q.fracRate = () => {
+  let d1 = pick([2, 3, 4, 5, 8]), n1 = ri(1, d1 - 1), d2 = pick([2, 3, 4, 6]), n2 = ri(1, d2 - 1);
+  [n1, d1] = simp(n1, d1); [n2, d2] = simp(n2, d2);
+  const rn = n1 * d2, rd = d1 * n2, name = pick(['Maya', 'Diego', 'Ana', 'Luis']), simple = fracText(rn, rd).split(' (')[0];
+  return { long: true, answer: rn / rd, answerText: fracText(rn, rd),
+    html: L(`${name} walks ${fracHTML(n1, d1)} mile in ${fracHTML(n2, d2)} hour. At this rate, how many miles does ${name} walk in 1 hour?`,
+            `${name} camina ${fracHTML(n1, d1)} de milla en ${fracHTML(n2, d2)} de hora. A este paso, ¿cuántas millas camina ${name} en 1 hora?`),
+    explain: L(`Divide distance by time: ${raw(n1, d1)} ÷ ${raw(n2, d2)} = ${raw(n1, d1)} × ${raw(d2, n2)} = ${simple} miles per hour.`,
+               `Divide la distancia entre el tiempo: ${raw(n1, d1)} ÷ ${raw(n2, d2)} = ${raw(n1, d1)} × ${raw(d2, n2)} = ${simple} millas por hora.`),
+    hint: L(`Miles per hour means miles ÷ hours: ${raw(n1, d1)} ÷ ${raw(n2, d2)}. To divide by a fraction, multiply by its reciprocal.`,
+            `Millas por hora significa millas ÷ horas: ${raw(n1, d1)} ÷ ${raw(n2, d2)}. Para dividir entre una fracción, multiplica por su recíproco.`),
+    mistakes: [mk((n2 * d1) / (d2 * n1), L('Put miles on top: miles ÷ hours.', 'Pon las millas arriba: millas ÷ horas.')),
+               mk((n1 * n2) / (d1 * d2), L('You multiplied. Miles per hour means dividing miles by hours.', 'Multiplicaste. Millas por hora significa dividir las millas entre las horas.'))] };
+};
+Q.findWhole = () => {
+  const p = pick([10, 20, 25, 30, 40, 50, 60, 75]), whole = (100 / gcd(p, 100)) * ri(2, 12), part = p * whole / 100;
+  return { html: L(`${part} is ${p}% of what number?`, `${part} es el ${p}% de ¿qué número?`), answer: whole, answerText: num(whole),
+    explain: L(`${part} ÷ ${num(p / 100)} = ${whole}. Check: ${p}% of ${whole} is ${part}.`, `${part} ÷ ${num(p / 100)} = ${whole}. Comprueba: el ${p}% de ${whole} es ${part}.`),
+    hint: L(`${part} is only part of the number, so the number is bigger. Divide ${part} by ${num(p / 100)}.`, `${part} es solo una parte del número, así que el número es mayor. Divide ${part} entre ${num(p / 100)}.`),
+    mistakes: [mk(round2(part * p / 100), L(`You found ${p}% of ${part}. Instead, ${part} is ${p}% of the mystery number, so divide.`, `Calculaste el ${p}% de ${part}. Pero ${part} es el ${p}% del número desconocido, así que divide.`))] };
+};
+Q.simpleInterest = () => {
+  const P = 100 * ri(2, 20), r = pick([2, 3, 4, 5, 6]), t = ri(2, 6), I = P * r * t / 100;
+  return { long: true, answer: I, answerText: money(I),
+    html: L(`You put ${money(P)} in a savings account that earns ${r}% simple interest per year. How much interest do you earn in ${t} years?`,
+            `Depositas ${money(P)} en una cuenta de ahorros que gana ${r}% de interés simple al año. ¿Cuánto interés ganas en ${t} años?`),
+    explain: L(`I = Prt = ${money(P)} × ${num(r / 100)} × ${t} = ${money(I)}.`, `I = Prt = ${money(P)} × ${num(r / 100)} × ${t} = ${money(I)}.`),
+    hint: L(`Use I = Prt. P is ${money(P)}, r is ${r}% written as a decimal, and t is ${t}.`, `Usa I = Prt. P es ${money(P)}, r es ${r}% escrito como decimal y t es ${t}.`),
+    mistakes: [mk(P + I, L('That’s the total in the account. The question asks for just the interest.', 'Ese es el total en la cuenta. La pregunta pide solo el interés.')),
+               mk(P * r * t, L(`Write the rate as a decimal: ${r}% = ${num(r / 100)}.`, `Escribe la tasa como decimal: ${r}% = ${num(r / 100)}.`)),
+               mk(P * r / 100, L(`That’s one year of interest. Multiply by ${t} years.`, `Ese es el interés de un año. Multiplica por ${t} años.`))] };
+};
 
-/* Returns null when the link names no set, so a game opened on its own plays its own questions. */
-function forGame(PFX){
-  var qs=params(), id=qs.set; if(!SETS[id]) return null;
-  var set=SETS[id], want=(qs.topics||'').split(','), picked=set.topics.filter(function(t){ return want.indexOf(t[0])>=0; });
-  if(!picked.length) picked=set.topics;
-  /* sentence-length prompts: the facts games set their prompt at 104px on one line, so give it room to wrap */
-  try{ var st=document.createElement('style'); st.textContent='.'+PFX+'-prompt{ font:700 34px/1.3 var(--body) !important; height:auto !important; min-height:96px; white-space:normal !important; overflow:visible !important; text-align:left !important; }'; document.head.appendChild(st); }catch(e){}
-  var Q=set.make(PFX), bag=[]; picked.forEach(function(t){ for(var i=0;i<(t[3]||1);i++) bag.push(t); });
-  var topicBag=[], lastType='';
-  function next(){ if(!topicBag.length) topicBag=bag.slice().sort(function(){ return Math.random()-0.5; });
-    var t=topicBag.pop(), list=t[2], type; do{ type=list[Math.floor(Math.random()*list.length)]; }while(type===lastType&&list.length>1&&Math.random()<0.8); lastType=type;
-    var q=Q.build(type); q.topic=t[1]; return q; }
-  /* bonus waves print the answers on small targets: no pictures, short labels */
-  function fits(q,max){ return !q.visual&&q.choices.every(function(c){ return plain(c.html).length<=max; }); }
-  function short(max){ var q; for(var n=0;n<60;n++){ q=next(); if(fits(q,max)) return q; }
-    var all=[]; set.topics.forEach(function(t){ all=all.concat(t[2]); });
-    for(n=0;n<80;n++){ var b=Q.build(all[Math.floor(Math.random()*all.length)]); if(fits(b,max)){ b.topic=picked[0][1]; return b; } }
-    return q; }
-  return { set:id, name:set.name, custom:true, suffix:'_'+id+'_'+picked.map(function(t){ return t[0]; }).join('-'),
-    topicTable:function(){ var o={}; picked.forEach(function(t){ o[t[1]]=[0,0]; }); return o; },
-    next:next, short:short };
+/* ---------- equations and inequalities (7.10A, 7.10B, 7.11A, 7.11B) ----------
+   Two extra answer kinds live here:
+     kind: 'ineq'   answer { sym, val }, the student taps <, >, ≤ or ≥ and types the number (x ___ number)
+     kind: 'choice' options [{ html, ok, msg }], the student taps one; msg explains a wrong pick
+   Inequality questions also give ineq: { flip, strict, value } messages for the common mistakes. */
+const V = (v = 'x') => `<i class="var">${v}</i>`;
+const SYM = { '<': '&lt;', '>': '&gt;', '<=': '≤', '>=': '≥' };
+const symText = s => ({ '<': '<', '>': '>', '<=': '≤', '>=': '≥' })[s];
+const flipSym = s => ({ '<': '>', '>': '<', '<=': '>=', '>=': '<=' })[s];
+const strictSwap = s => ({ '<': '<=', '<=': '<', '>': '>=', '>=': '>' })[s];
+const term = (a, v = 'x') => (a === 1 ? V(v) : a === -1 ? `${MINUS}${V(v)}` : `${num(a)}${V(v)}`);
+const plusC = c => (c === 0 ? '' : c > 0 ? ` + ${c}` : ` ${MINUS} ${Math.abs(c)}`);
+const fracX = (a, v = 'x') => `<span class="fr"><span class="fn">${V(v)}</span><span class="fd">${a}</span></span>`;
+const undoL = b => (b > 0 ? L(`subtract ${b}`, `resta ${b}`) : L(`add ${-b}`, `suma ${-b}`));
+const opText = b => (b > 0 ? `+ ${b}` : `${MINUS} ${-b}`);
+// A number line showing x (sym) v. Used in questions and in explanations.
+function numberLineSVG(v, sym, opts = {}) {
+  const lo = v - 5, hi = v + 5, W = 300, X = t => 20 + (t - lo) / (hi - lo) * (W - 40);
+  const closed = sym === '<=' || sym === '>=', right = sym === '>' || sym === '>=';
+  let ticks = '';
+  for (let t = lo; t <= hi; t++) ticks += `<path d="M${X(t)} 30v10" stroke="currentColor" stroke-width="1.6"/><text x="${X(t)}" y="56" text-anchor="middle" font-size="11" fill="currentColor">${num(t)}</text>`;
+  const x0 = X(v), x1 = right ? W - 8 : 8;
+  return `<svg class="nline${opts.small ? ' small' : ''}" viewBox="0 0 ${W} 62" role="img" aria-label="x ${symText(sym)} ${num(v)}">
+    <path d="M6 35H${W - 6}" stroke="currentColor" stroke-width="1.8"/><path d="M${W - 4} 35 l-8 -5 v10z M4 35 l8 -5 v10z" fill="currentColor"/>${ticks}
+    <path d="M${x0} 35H${x1}" stroke="#2168B8" stroke-width="6" stroke-linecap="round"/><path d="M${right ? W - 2 : 2} 35 l${right ? -12 : 12} -8 v16z" fill="#2168B8"/>
+    <circle cx="${x0}" cy="35" r="7" fill="${closed ? '#2168B8' : '#FFFFFF'}" stroke="#2168B8" stroke-width="3"/></svg>`;
+}
+const ineqText = (s, v, x = 'x') => `${x} ${symText(s)} ${num(v)}`;
+const opsFor = s => ({ '<': L('less than', 'menor que'), '>': L('greater than', 'mayor que'), '<=': L('less than or equal to', 'menor o igual que'), '>=': L('greater than or equal to', 'mayor o igual que') })[s];
+function shuffleOpts(opts) { for (let i = opts.length - 1; i > 0; i--) { const j = ri(0, i); [opts[i], opts[j]] = [opts[j], opts[i]]; } return opts; }
+
+Q.eqOneStep = () => {
+  const k = ri(0, 2), x = nz(-12, 12), solve = L(`Solve for ${V()}:`, `Resuelve para ${V()}:`);
+  if (k === 0) {
+    const a = nz(-15, 15), b = x + a, eq = `${V()}${plusC(a)} = ${num(b)}`;
+    return { html: L(`${solve.en} ${eq}`, `${solve.es} ${eq}`), answer: x, answerText: num(x),
+      explain: L(`${a > 0 ? `Subtract ${a}` : `Add ${-a}`} on both sides: ${V()} = ${num(b)} ${a > 0 ? MINUS : '+'} ${Math.abs(a)} = ${num(x)}.`,
+                 `${a > 0 ? `Resta ${a}` : `Suma ${-a}`} en los dos lados: ${V()} = ${num(b)} ${a > 0 ? MINUS : '+'} ${Math.abs(a)} = ${num(x)}.`),
+      hint: L(`What’s being done to ${V()}? ${a > 0 ? `It’s adding ${a}, so subtract ${a} from both sides.` : `It’s subtracting ${-a}, so add ${-a} to both sides.`}`,
+              `¿Qué se le hace a ${V()}? ${a > 0 ? `Se le suma ${a}, así que resta ${a} en los dos lados.` : `Se le resta ${-a}, así que suma ${-a} en los dos lados.`}`),
+      mistakes: [mk(b + a, L(`You did the same operation instead of the opposite. To undo ${a > 0 ? `+ ${a}, subtract ${a}` : `${MINUS} ${-a}, add ${-a}`}.`,
+                             `Hiciste la misma operación en lugar de la opuesta. Para deshacer ${a > 0 ? `+ ${a}, resta ${a}` : `${MINUS} ${-a}, suma ${-a}`}.`))] };
+  }
+  if (k === 1) {
+    const a = nzBig(-9, 9), b = a * x, eq = `${term(a)} = ${num(b)}`;
+    return { html: L(`${solve.en} ${eq}`, `${solve.es} ${eq}`), answer: x, answerText: num(x),
+      explain: L(`${term(a)} means ${num(a)} times ${V()}, so divide both sides by ${paren(a)}: ${V()} = ${num(b)} ÷ ${paren(a)} = ${num(x)}.`,
+                 `${term(a)} significa ${num(a)} por ${V()}, así que divide los dos lados entre ${paren(a)}: ${V()} = ${num(b)} ÷ ${paren(a)} = ${num(x)}.`),
+      hint: L(`${term(a)} means ${num(a)} × ${V()}. Undo multiplying by dividing both sides by ${paren(a)}.`, `${term(a)} significa ${num(a)} × ${V()}. Deshaz la multiplicación dividiendo los dos lados entre ${paren(a)}.`),
+      mistakes: [mk(b - a, L(`${term(a)} means multiply, not add. Divide both sides by ${paren(a)}.`, `${term(a)} significa multiplicar, no sumar. Divide los dos lados entre ${paren(a)}.`)),
+                 mk(b * a, L(`To undo multiplying by ${paren(a)}, divide by it.`, `Para deshacer la multiplicación por ${paren(a)}, divide entre ese número.`))] };
+  }
+  const a = nzBig(-8, 8), b = nz(-9, 9), xx = a * b, eq = `${fracX(a < 0 ? `(${num(a)})` : a)} = ${num(b)}`;
+  return { html: L(`${solve.en} ${eq}`, `${solve.es} ${eq}`), answer: xx, answerText: num(xx),
+    explain: L(`${V()} is divided by ${paren(a)}, so multiply both sides by ${paren(a)}: ${V()} = ${num(b)} × ${paren(a)} = ${num(xx)}.`,
+               `${V()} está dividida entre ${paren(a)}, así que multiplica los dos lados por ${paren(a)}: ${V()} = ${num(b)} × ${paren(a)} = ${num(xx)}.`),
+    hint: L(`${V()} is being divided by ${paren(a)}. Undo it by multiplying both sides by ${paren(a)}.`, `${V()} se divide entre ${paren(a)}. Deshazlo multiplicando los dos lados por ${paren(a)}.`),
+    mistakes: [mk(b / a, L(`To undo dividing by ${paren(a)}, multiply by it instead.`, `Para deshacer la división entre ${paren(a)}, multiplica por ese número.`))] };
+};
+Q.eqCheck = () => {
+  const a = nzBig(-6, 6), x = nz(-8, 8), b = nz(-12, 12), c = a * x + b;
+  const yes = Math.random() < 0.5, v = yes ? x : x + pick([-2, -1, 1, 2]);
+  const lhs = a * v + b, eq = `${term(a)}${plusC(b)} = ${num(c)}`, sub = `${paren(a)}(${num(v)})${plusC(b)} = ${num(lhs)}`;
+  return { kind: 'choice', html: L(`Is ${V()} = ${num(v)} a solution of ${eq}?`, `¿Es ${V()} = ${num(v)} una solución de ${eq}?`),
+    options: [{ html: L('Yes', 'Sí'), ok: yes, msg: L(`Substitute ${num(v)} for ${V()}: ${sub}, which is not ${num(c)}.`, `Sustituye ${V()} por ${num(v)}: ${sub}, que no es ${num(c)}.`) },
+              { html: L('No', 'No'), ok: !yes, msg: L(`Substitute ${num(v)} for ${V()}: ${sub}. That equals ${num(c)}, so it is a solution.`, `Sustituye ${V()} por ${num(v)}: ${sub}. Eso es igual a ${num(c)}, así que sí es una solución.`) }],
+    answerText: yes ? L('Yes', 'Sí') : L('No', 'No'),
+    explain: L(`Substitute: ${sub}. ${lhs === c ? `Both sides equal ${num(c)}, so yes, it’s a solution.` : `${num(lhs)} ≠ ${num(c)}, so no, it isn’t a solution.`}`,
+               `Sustituye: ${sub}. ${lhs === c ? `Los dos lados son iguales a ${num(c)}, así que sí es una solución.` : `${num(lhs)} ≠ ${num(c)}, así que no es una solución.`}`),
+    hint: L(`Replace ${V()} with ${num(v)}, work out the left side, and see if it equals ${num(c)}.`, `Reemplaza ${V()} por ${num(v)}, resuelve el lado izquierdo y fíjate si es igual a ${num(c)}.`) };
+};
+Q.eqTwoStep = () => {
+  const x = nz(-10, 10), solve = L(`Solve for ${V()}:`, `Resuelve para ${V()}:`);
+  if (Math.random() < 0.65) {
+    const a = nzBig(-9, 9), b = nz(-15, 15), c = a * x + b, eq = `${term(a)}${plusC(b)} = ${num(c)}`, u = undoL(b);
+    return { html: L(`${solve.en} ${eq}`, `${solve.es} ${eq}`), answer: x, answerText: num(x),
+      explain: L(`Step 1: ${u.en} on both sides: ${term(a)} = ${num(c - b)}. Step 2: divide both sides by ${paren(a)}: ${V()} = ${num(x)}.`,
+                 `Paso 1: ${u.es} en los dos lados: ${term(a)} = ${num(c - b)}. Paso 2: divide los dos lados entre ${paren(a)}: ${V()} = ${num(x)}.`),
+      hint: L(`Undo the ${opText(b)} first, then undo the multiplying by ${paren(a)}.`, `Primero deshaz el ${opText(b)} y luego deshaz la multiplicación por ${paren(a)}.`),
+      mistakes: [mk((c + b) / a, L(`In step 1, use the opposite operation: ${u.en}.`, `En el paso 1, usa la operación opuesta: ${u.es}.`)),
+                 mk(c / a - b, L('Undo the adding or subtracting first, then the multiplying. Work backward from the outside.', 'Primero deshaz la suma o la resta y después la multiplicación. Trabaja de afuera hacia adentro.')),
+                 mk((c - b) * a, L(`${term(a)} means multiply, so undo it by dividing by ${paren(a)}.`, `${term(a)} significa multiplicar, así que deshazlo dividiendo entre ${paren(a)}.`))] };
+  }
+  const a = pick([2, 3, 4, 5]), q = nz(-8, 8), b = nz(-10, 10), c = q + b, xx = q * a, eq = `${fracX(a)}${plusC(b)} = ${num(c)}`, u = undoL(b);
+  return { html: L(`${solve.en} ${eq}`, `${solve.es} ${eq}`), answer: xx, answerText: num(xx),
+    explain: L(`Step 1: ${u.en}: ${fracX(a)} = ${num(c - b)}. Step 2: multiply both sides by ${a}: ${V()} = ${num(xx)}.`, `Paso 1: ${u.es}: ${fracX(a)} = ${num(c - b)}. Paso 2: multiplica los dos lados por ${a}: ${V()} = ${num(xx)}.`),
+    hint: L(`Undo the ${opText(b)} first. Then ${V()} is divided by ${a}, so multiply by ${a}.`, `Primero deshaz el ${opText(b)}. Luego ${V()} está dividida entre ${a}, así que multiplica por ${a}.`),
+    mistakes: [mk((c - b) / a, L(`${V()} is divided by ${a}, so multiply by ${a} to undo it.`, `${V()} está dividida entre ${a}, así que multiplica por ${a} para deshacerlo.`)),
+               mk((c + b) * a, L(`In step 1, use the opposite operation: ${u.en}.`, `En el paso 1, usa la operación opuesta: ${u.es}.`)),
+               mk(c * a - b, L('Undo the adding or subtracting first.', 'Primero deshaz la suma o la resta.'))] };
+};
+const solveL = L('Solve:', 'Resuelve:');
+Q.ineqOneStep = () => {
+  const s = pick(['<', '>', '<=', '>=']), v = nz(-10, 10), nl = numberLineSVG(v, s, { small: true }), keep = L(`Keep the same symbol: the problem uses ${symText(s)}.`, `Conserva el mismo símbolo: el problema usa ${symText(s)}.`);
+  if (Math.random() < 0.5) {
+    const a = nz(-12, 12), c = v + a, iq = `${V()}${plusC(a)} ${SYM[s]} ${num(c)}`, u = undoL(a);
+    return { kind: 'ineq', html: L(`${solveL.en} ${iq}`, `${solveL.es} ${iq}`), answer: { sym: s, val: v }, answerText: ineqText(s, v),
+      explain: L(`${u.en[0].toUpperCase() + u.en.slice(1)} on both sides. The sign stays the same: ${ineqText(s, v)}.${nl}`, `${u.es[0].toUpperCase() + u.es.slice(1)} en los dos lados. El signo se queda igual: ${ineqText(s, v)}.${nl}`),
+      hint: L(`Solve it like an equation: ${u.en} on both sides. Adding or subtracting never flips the sign.`, `Resuélvela como una ecuación: ${u.es} en los dos lados. Sumar o restar nunca invierte el signo.`),
+      ineq: { flip: L('Adding or subtracting doesn’t flip the inequality sign. Keep it the same.', 'Sumar o restar no invierte el signo de desigualdad. Déjalo igual.'), strict: keep,
+              value: L(`Check the number. ${u.en[0].toUpperCase() + u.en.slice(1)} on both sides.`, `Revisa el número. ${u.es[0].toUpperCase() + u.es.slice(1)} en los dos lados.`) } };
+  }
+  const a = pick([2, 3, 4, 5, 6]), c = a * v, iq = `${term(a)} ${SYM[s]} ${num(c)}`;
+  return { kind: 'ineq', html: L(`${solveL.en} ${iq}`, `${solveL.es} ${iq}`), answer: { sym: s, val: v }, answerText: ineqText(s, v),
+    explain: L(`Divide both sides by ${a}. ${a} is positive, so the sign stays the same: ${ineqText(s, v)}.${nl}`, `Divide los dos lados entre ${a}. ${a} es positivo, así que el signo se queda igual: ${ineqText(s, v)}.${nl}`),
+    hint: L(`Divide both sides by ${a}. Dividing by a positive number keeps the sign the same.`, `Divide los dos lados entre ${a}. Dividir entre un número positivo no cambia el signo.`),
+    ineq: { flip: L(`You only flip the sign when you multiply or divide by a negative. ${a} is positive.`, `Solo inviertes el signo cuando multiplicas o divides entre un negativo. ${a} es positivo.`), strict: keep,
+            value: L(`Divide ${num(c)} by ${a}.`, `Divide ${num(c)} entre ${a}.`) } };
+};
+Q.ineqGraph = () => {
+  const s = pick(['<', '>', '<=', '>=']), v = nz(-7, 7), filled = s.length > 1, right = s.includes('>'), nl = numberLineSVG(v, s);
+  return { kind: 'ineq', long: true, html: L(`Which inequality does this number line show?${nl}`, `¿Qué desigualdad muestra esta recta numérica?${nl}`), answer: { sym: s, val: v }, answerText: ineqText(s, v),
+    explain: L(`The circle is ${filled ? 'filled' : 'open'}, so ${num(v)} is ${filled ? '' : 'not '}included. The arrow points ${right ? 'right, toward greater' : 'left, toward smaller'} numbers. So it’s ${ineqText(s, v)}.`,
+               `El círculo está ${filled ? 'relleno' : 'abierto'}, así que ${num(v)} ${filled ? 'sí' : 'no'} está incluido. La flecha apunta hacia la ${right ? 'derecha, hacia números mayores' : 'izquierda, hacia números menores'}. Entonces es ${ineqText(s, v)}.`),
+    hint: L('Look at the circle first: open means < or >, filled means ≤ or ≥. Then look at which way the arrow points.', 'Primero mira el círculo: abierto significa < o >, relleno significa ≤ o ≥. Luego fíjate hacia dónde apunta la flecha.'),
+    ineq: { flip: L(`The arrow points ${right ? 'right, toward greater numbers, so use > or ≥' : 'left, toward smaller numbers, so use < or ≤'}.`, `La flecha apunta hacia la ${right ? 'derecha, hacia números mayores, así que usa > o ≥' : 'izquierda, hacia números menores, así que usa < o ≤'}.`),
+            strict: L(`Look at the circle. ${filled ? 'It’s filled in, so the number is included: use ≤ or ≥.' : 'It’s open, so the number is not included: use < or >.'}`, `Mira el círculo. ${filled ? 'Está relleno, así que el número está incluido: usa ≤ o ≥.' : 'Está abierto, así que el número no está incluido: usa < o >.'}`),
+            value: L('The circle sits on the boundary number. Read it from the number line.', 'El círculo está sobre el número límite. Léelo en la recta numérica.') } };
+};
+Q.eqWrite = () => {
+  const k = ri(0, 3);
+  let html, opts, explain;
+  if (k === 0) {
+    let s0, r; do { s0 = ri(5, 30); r = ri(3, 9); } while (s0 === r); const t = s0 + r * ri(3, 9);
+    html = L(`Ana has $${s0} saved. She saves $${r} each week. Which equation finds ${V('w')}, the number of weeks until she has $${t}?`, `Ana tiene $${s0} ahorrados. Ahorra $${r} cada semana. ¿Qué ecuación encuentra ${V('w')}, el número de semanas hasta que tenga $${t}?`);
+    opts = [{ html: `${r}${V('w')} + ${s0} = ${t}`, ok: true },
+            { html: `${s0}${V('w')} + ${r} = ${t}`, msg: L(`The $${r} happens every week, so it goes with ${V('w')}. The $${s0} is only added once.`, `Los $${r} se repiten cada semana, así que van con ${V('w')}. Los $${s0} se suman solo una vez.`) },
+            { html: `${r}${V('w')} ${MINUS} ${s0} = ${t}`, msg: L(`She already has $${s0}, so it’s added, not subtracted.`, `Ella ya tiene $${s0}, así que se suman, no se restan.`) },
+            { html: `${r} + ${s0}${V('w')} = ${t}`, msg: L(`Each week adds $${r}, so it’s $${r} times ${V('w')}.`, `Cada semana agrega $${r}, así que es $${r} por ${V('w')}.`) }];
+    explain = L(`$${r} per week times ${V('w')} weeks, plus the $${s0} she starts with, equals $${t}: ${r}${V('w')} + ${s0} = ${t}.`, `$${r} por semana por ${V('w')} semanas, más los $${s0} con los que empieza, es igual a $${t}: ${r}${V('w')} + ${s0} = ${t}.`);
+  } else if (k === 1) {
+    let f, r; do { f = ri(3, 8); r = ri(2, 4); } while (f === r); const t = f + r * ri(4, 12);
+    html = L(`A taxi charges $${f} plus $${r} per mile. A ride costs $${t}. Which equation finds ${V('m')}, the number of miles?`, `Un taxi cobra $${f} más $${r} por milla. Un viaje cuesta $${t}. ¿Qué ecuación encuentra ${V('m')}, el número de millas?`);
+    opts = [{ html: `${r}${V('m')} + ${f} = ${t}`, ok: true },
+            { html: `${f}${V('m')} + ${r} = ${t}`, msg: L(`The $${r} is charged for each mile, so it goes with ${V('m')}.`, `Los $${r} se cobran por cada milla, así que van con ${V('m')}.`) },
+            { html: `${r}${V('m')} ${MINUS} ${f} = ${t}`, msg: L(`The $${f} is added to the bill, not taken away.`, `Los $${f} se suman a la cuenta, no se restan.`) },
+            { html: `(${r} + ${f})${V('m')} = ${t}`, msg: L(`The $${f} is charged once, not every mile.`, `Los $${f} se cobran una sola vez, no en cada milla.`) }];
+    explain = L(`$${r} per mile times ${V('m')} miles, plus the $${f} starting fee: ${r}${V('m')} + ${f} = ${t}.`, `$${r} por milla por ${V('m')} millas, más la tarifa inicial de $${f}: ${r}${V('m')} + ${f} = ${t}.`);
+  } else if (k === 2) {
+    const n = pick([3, 4]), tip = ri(1, 3), each = ri(6, 12);
+    html = L(`${n} friends split the cost of a pizza equally. Then each one adds a $${tip} tip. Each friend pays $${each} in all. Which equation finds ${V('p')}, the cost of the pizza?`,
+             `${n} amigos se dividen el costo de una pizza en partes iguales. Luego cada uno agrega $${tip} de propina. Cada amigo paga $${each} en total. ¿Qué ecuación encuentra ${V('p')}, el costo de la pizza?`);
+    opts = [{ html: `${fracX(n, 'p')} + ${tip} = ${each}`, ok: true },
+            { html: `${n}${V('p')} + ${tip} = ${each}`, msg: L(`Splitting equally means dividing the pizza by ${n}, not multiplying.`, `Dividir en partes iguales significa dividir la pizza entre ${n}, no multiplicar.`) },
+            { html: `${fracX(n, 'p')} ${MINUS} ${tip} = ${each}`, msg: L('Each friend adds a tip, so it’s added, not subtracted.', 'Cada amigo agrega una propina, así que se suma, no se resta.') },
+            { html: `<span class="fr"><span class="fn">${V('p')} + ${tip}</span><span class="fd">${n}</span></span> = ${each}`, msg: L(`Each friend adds their own $${tip}. It isn’t split ${n} ways.`, `Cada amigo agrega sus propios $${tip}. No se dividen entre ${n}.`) }];
+    explain = L(`Each friend’s share is ${V('p')} ÷ ${n}, then they add $${tip}: ${V('p')}/${n} + ${tip} = ${each}.`, `La parte de cada amigo es ${V('p')} ÷ ${n} y luego agregan $${tip}: ${V('p')}/${n} + ${tip} = ${each}.`);
+  } else {
+    const g = ri(3, 9), left = ri(15, 40);
+    html = L(`Leo doubles his collection of trading cards, then gives away ${g} cards. Now he has ${left}. Which equation finds ${V('n')}, the number of cards he started with?`,
+             `Leo duplica su colección de tarjetas y luego regala ${g} tarjetas. Ahora tiene ${left}. ¿Qué ecuación encuentra ${V('n')}, el número de tarjetas con el que empezó?`);
+    opts = [{ html: `2${V('n')} ${MINUS} ${g} = ${left}`, ok: true },
+            { html: `2${V('n')} + ${g} = ${left}`, msg: L('Giving cards away takes them away, so subtract.', 'Regalar tarjetas es quitarlas, así que resta.') },
+            { html: `2(${V('n')} ${MINUS} ${g}) = ${left}`, msg: L('He doubles first, then gives cards away. The doubling happens before the subtracting.', 'Primero duplica y luego regala tarjetas. La duplicación pasa antes de la resta.') },
+            { html: `${fracX(2, 'n')} ${MINUS} ${g} = ${left}`, msg: L('Doubling means multiplying by 2, not dividing.', 'Duplicar significa multiplicar por 2, no dividir.') }];
+    explain = L(`Double the starting number (2${V('n')}), then subtract the ${g} he gave away: 2${V('n')} ${MINUS} ${g} = ${left}.`, `Duplica el número inicial (2${V('n')}) y luego resta las ${g} que regaló: 2${V('n')} ${MINUS} ${g} = ${left}.`);
+  }
+  return { kind: 'choice', long: true, html, options: shuffleOpts(opts), answerText: opts.find(o => o.ok).html, explain,
+    hint: L('Find the part that repeats or changes (it goes with the variable) and the part that happens just once (the constant).', 'Busca la parte que se repite o cambia (va con la variable) y la parte que pasa solo una vez (la constante).') };
+};
+Q.ineqTwoStep = () => {
+  const s = pick(['<', '>', '<=', '>=']), v = nz(-8, 8), neg = Math.random() < 0.5;
+  const a = neg ? -pick([2, 3, 4, 5]) : pick([2, 3, 4, 5]), b = nz(-12, 12), c = a * v + b, u = undoL(b);
+  const sol = neg ? flipSym(s) : s, iq = `${term(a)}${plusC(b)} ${SYM[s]} ${num(c)}`, nl = numberLineSVG(v, sol, { small: true });
+  return { kind: 'ineq', html: L(`${solveL.en} ${iq}`, `${solveL.es} ${iq}`), answer: { sym: sol, val: v }, answerText: ineqText(sol, v),
+    explain: L(`Step 1: ${u.en}: ${term(a)} ${symText(s)} ${num(c - b)}. Step 2: divide by ${paren(a)}${neg ? ', and because it’s negative, flip the sign' : ''}: ${ineqText(sol, v)}.${nl}`,
+               `Paso 1: ${u.es}: ${term(a)} ${symText(s)} ${num(c - b)}. Paso 2: divide entre ${paren(a)}${neg ? ' y, como es negativo, invierte el signo' : ''}: ${ineqText(sol, v)}.${nl}`),
+    hint: L(`Undo the ${opText(b)} first, then divide by ${paren(a)}.${neg ? ' Watch out: dividing by a negative number flips the sign.' : ''}`, `Primero deshaz el ${opText(b)} y luego divide entre ${paren(a)}.${neg ? ' Cuidado: dividir entre un número negativo invierte el signo.' : ''}`),
+    ineq: { flip: neg ? L(`You divided by ${num(a)}, a negative number, so flip the inequality sign.`, `Dividiste entre ${num(a)}, un número negativo, así que invierte el signo de desigualdad.`)
+                      : L(`You only flip the sign when you divide by a negative. ${a} is positive.`, `Solo inviertes el signo cuando divides entre un negativo. ${a} es positivo.`),
+            strict: L(`Keep ${s.length > 1 ? 'the “or equal to” part (≤ or ≥)' : 'it strict (< or >)'}, just like the problem.`, `Conserva ${s.length > 1 ? 'la parte de “o igual” (≤ o ≥)' : 'la desigualdad estricta (< o >)'}, igual que en el problema.`),
+            value: L(`Check your steps: ${u.en}, then divide by ${paren(a)}.`, `Revisa tus pasos: ${u.es} y luego divide entre ${paren(a)}.`) } };
+};
+Q.eqWord = () => {
+  const k = ri(0, 3);
+  if (k === 0) {
+    const f = pick([20, 25, 30, 40]), m = pick([10, 12, 15, 20]), n = ri(2, 10), t = f + m * n;
+    return { long: true, answer: n, answerText: num(n),
+      html: L(`A gym charges a $${f} sign-up fee plus $${m} per month. Maria paid $${t} in all. How many months did she pay for?`, `Un gimnasio cobra una cuota de inscripción de $${f} más $${m} por mes. María pagó $${t} en total. ¿Por cuántos meses pagó?`),
+      explain: L(`${m}${V('m')} + ${f} = ${t}. Subtract ${f}: ${m}${V('m')} = ${t - f}. Divide by ${m}: ${V('m')} = ${n} months.`, `${m}${V('m')} + ${f} = ${t}. Resta ${f}: ${m}${V('m')} = ${t - f}. Divide entre ${m}: ${V('m')} = ${n} meses.`),
+      hint: L(`Write it as ${m}${V('m')} + ${f} = ${t}. Undo the sign-up fee first.`, `Escríbelo como ${m}${V('m')} + ${f} = ${t}. Primero deshaz la cuota de inscripción.`),
+      mistakes: [mk(round2(t / m - f), L('Take away the one-time sign-up fee first, then divide by the monthly cost.', 'Primero quita la cuota de inscripción (que se paga una vez) y luego divide entre el costo mensual.')),
+                 mk(round2((t + f) / m), L(`The $${f} fee is part of what she paid, so subtract it.`, `La cuota de $${f} es parte de lo que pagó, así que réstala.`)),
+                 mk(round2(t / m), L(`Don’t forget the $${f} sign-up fee. Subtract it before dividing.`, `No olvides la cuota de inscripción de $${f}. Réstala antes de dividir.`))] };
+  }
+  if (k === 1) {
+    const n = pick([3, 4, 5]), off = pick([5, 8, 10, 12]), each = ri(9, 25), t = n * each - off;
+    return { long: true, answer: each, answerText: money(each),
+      html: L(`Mario buys ${n} shirts that cost the same amount and uses a $${off} coupon. He pays $${t}. How much does one shirt cost, in dollars?`, `Mario compra ${n} camisas del mismo precio y usa un cupón de $${off}. Paga $${t}. ¿Cuánto cuesta una camisa, en dólares?`),
+      explain: L(`${n}${V('s')} ${MINUS} ${off} = ${t}. Add ${off}: ${n}${V('s')} = ${t + off}. Divide by ${n}: ${V('s')} = $${each}.`, `${n}${V('s')} ${MINUS} ${off} = ${t}. Suma ${off}: ${n}${V('s')} = ${t + off}. Divide entre ${n}: ${V('s')} = $${each}.`),
+      hint: L(`Write it as ${n}${V('s')} ${MINUS} ${off} = ${t}. The coupon was subtracted, so add it back first.`, `Escríbelo como ${n}${V('s')} ${MINUS} ${off} = ${t}. El cupón se restó, así que primero súmalo de nuevo.`),
+      mistakes: [mk(round2((t - off) / n), L(`The coupon lowered the price, so add the $${off} back before dividing.`, `El cupón bajó el precio, así que vuelve a sumar los $${off} antes de dividir.`)),
+                 mk(round2(t / n), L(`Don’t forget the $${off} coupon. Add it back first.`, `No olvides el cupón de $${off}. Primero súmalo de nuevo.`))] };
+  }
+  if (k === 2) {
+    const start = ri(40, 90), per = pick([3, 4, 5, 6]), d = ri(3, 9), left = start - per * d;
+    return { long: true, answer: d, answerText: num(d),
+      html: L(`A phone battery is at ${start}%. It drops ${per}% every hour. After how many hours will it be at ${left}%?`, `La batería de un teléfono está al ${start}%. Baja ${per}% cada hora. ¿Después de cuántas horas estará al ${left}%?`),
+      explain: L(`${start} ${MINUS} ${per}${V('h')} = ${left}. Subtract ${start}: ${MINUS}${per}${V('h')} = ${left - start}. Divide by ${MINUS}${per}: ${V('h')} = ${d} hours.`, `${start} ${MINUS} ${per}${V('h')} = ${left}. Resta ${start}: ${MINUS}${per}${V('h')} = ${left - start}. Divide entre ${MINUS}${per}: ${V('h')} = ${d} horas.`),
+      hint: L(`Write it as ${start} ${MINUS} ${per}${V('h')} = ${left}. How much did it drop in all?`, `Escríbelo como ${start} ${MINUS} ${per}${V('h')} = ${left}. ¿Cuánto bajó en total?`),
+      mistakes: [mk(round2((start + left) / per), L('Find how much the battery dropped: subtract the ending percent from the starting percent.', 'Halla cuánto bajó la batería: resta el porcentaje final del porcentaje inicial.')),
+                 mk(start - left, L(`That’s how much it dropped in all. Divide by ${per}% per hour.`, `Eso es lo que bajó en total. Divide entre ${per}% por hora.`))] };
+  }
+  const n = pick([2, 3, 4]), each = ri(4, 12), extra = ri(3, 15), t = n * each + extra;
+  return { long: true, answer: each, answerText: money(each),
+    html: L(`Kim buys ${n} identical notebooks and a $${extra} backpack. She spends $${t}. How much does each notebook cost, in dollars?`, `Kim compra ${n} cuadernos iguales y una mochila de $${extra}. Gasta $${t}. ¿Cuánto cuesta cada cuaderno, en dólares?`),
+    explain: L(`${n}${V('b')} + ${extra} = ${t}. Subtract ${extra}: ${n}${V('b')} = ${t - extra}. Divide by ${n}: ${V('b')} = $${each}.`, `${n}${V('b')} + ${extra} = ${t}. Resta ${extra}: ${n}${V('b')} = ${t - extra}. Divide entre ${n}: ${V('b')} = $${each}.`),
+    hint: L(`Write it as ${n}${V('b')} + ${extra} = ${t}. Take away the backpack first.`, `Escríbelo como ${n}${V('b')} + ${extra} = ${t}. Primero quita la mochila.`),
+    mistakes: [mk(round2((t + extra) / n), L(`Subtract the $${extra} backpack, don’t add it.`, `Resta la mochila de $${extra}, no la sumes.`)),
+               mk(round2(t / n), L(`Take away the $${extra} backpack before dividing.`, `Quita la mochila de $${extra} antes de dividir.`)),
+               mk(t - extra, L(`That’s what all ${n} notebooks cost together. Divide by ${n}.`, `Eso es lo que cuestan los ${n} cuadernos juntos. Divide entre ${n}.`))] };
+};
+Q.ineqWrite = () => {
+  const k = ri(0, 2);
+  let html, opts, explain;
+  if (k === 0) {
+    const budget = pick([40, 50, 60]), each = pick([8, 10, 12]), ship = ri(3, 7);
+    html = L(`You can spend at most $${budget}. Shirts cost $${each} each, plus $${ship} shipping for the whole order. Which inequality shows ${V('s')}, the number of shirts you can buy?`,
+             `Puedes gastar como máximo $${budget}. Las camisas cuestan $${each} cada una, más $${ship} de envío por todo el pedido. ¿Qué desigualdad muestra ${V('s')}, el número de camisas que puedes comprar?`);
+    opts = [{ html: `${each}${V('s')} + ${ship} ≤ ${budget}`, ok: true },
+            { html: `${each}${V('s')} + ${ship} ≥ ${budget}`, msg: L('“At most” means you can’t go over, so use ≤.', '“Como máximo” significa que no te puedes pasar, así que usa ≤.') },
+            { html: `${each}${V('s')} + ${ship} &lt; ${budget}`, msg: L(`“At most $${budget}” includes spending exactly $${budget}, so use ≤, not <.`, `“Como máximo $${budget}” incluye gastar exactamente $${budget}, así que usa ≤, no <.`) },
+            { html: `${ship}${V('s')} + ${each} ≤ ${budget}`, msg: L(`Each shirt costs $${each}, so $${each} goes with ${V('s')}. Shipping is charged once.`, `Cada camisa cuesta $${each}, así que los $${each} van con ${V('s')}. El envío se cobra una sola vez.`) }];
+    explain = L(`Total cost is ${each}${V('s')} + ${ship}. “At most” means less than or equal to: ${each}${V('s')} + ${ship} ≤ ${budget}.`, `El costo total es ${each}${V('s')} + ${ship}. “Como máximo” significa menor o igual que: ${each}${V('s')} + ${ship} ≤ ${budget}.`);
+  } else if (k === 1) {
+    const goal = pick([100, 120, 150]), per = pick([5, 8, 10]); let have; do { have = ri(10, 40); } while (have === per);
+    html = L(`Sam has $${have} and earns $${per} for each lawn he mows. He wants at least $${goal}. Which inequality shows ${V('L')}, the number of lawns he needs to mow?`,
+             `Sam tiene $${have} y gana $${per} por cada jardín que poda. Quiere tener por lo menos $${goal}. ¿Qué desigualdad muestra ${V('L')}, el número de jardines que necesita podar?`);
+    opts = [{ html: `${per}${V('L')} + ${have} ≥ ${goal}`, ok: true },
+            { html: `${per}${V('L')} + ${have} ≤ ${goal}`, msg: L('“At least” means that amount or more, so use ≥.', '“Por lo menos” significa esa cantidad o más, así que usa ≥.') },
+            { html: `${per}${V('L')} + ${have} &gt; ${goal}`, msg: L(`“At least $${goal}” includes exactly $${goal}, so use ≥, not >.`, `“Por lo menos $${goal}” incluye exactamente $${goal}, así que usa ≥, no >.`) },
+            { html: `${have}${V('L')} + ${per} ≥ ${goal}`, msg: L(`He earns $${per} per lawn, so $${per} goes with ${V('L')}.`, `Gana $${per} por jardín, así que los $${per} van con ${V('L')}.`) }];
+    explain = L(`Money earned (${per}${V('L')}) plus what he has (${have}) must be at least ${goal}: ${per}${V('L')} + ${have} ≥ ${goal}.`, `El dinero que gana (${per}${V('L')}) más lo que tiene (${have}) debe ser por lo menos ${goal}: ${per}${V('L')} + ${have} ≥ ${goal}.`);
+  } else {
+    const cap = pick([20, 24, 30]), per = pick([2, 3, 4]); let on; do { on = ri(2, 6); } while (on === per);
+    html = L(`An elevator can carry fewer than ${cap} people. ${on} people are already on, and people get on in groups of ${per}. Which inequality shows ${V('g')}, the number of groups that can still get on?`,
+             `Un elevador puede llevar menos de ${cap} personas. Ya hay ${on} personas adentro y la gente sube en grupos de ${per}. ¿Qué desigualdad muestra ${V('g')}, el número de grupos que todavía pueden subir?`);
+    opts = [{ html: `${per}${V('g')} + ${on} &lt; ${cap}`, ok: true },
+            { html: `${per}${V('g')} + ${on} ≤ ${cap}`, msg: L(`“Fewer than ${cap}” means ${cap} is not allowed, so use <.`, `“Menos de ${cap}” significa que ${cap} no está permitido, así que usa <.`) },
+            { html: `${per}${V('g')} + ${on} &gt; ${cap}`, msg: L('“Fewer than” means less, so the symbol opens toward the smaller side: <.', '“Menos de” significa menor, así que el símbolo es <.') },
+            { html: `${on}${V('g')} + ${per} &lt; ${cap}`, msg: L(`Each group has ${per} people, so ${per} goes with ${V('g')}.`, `Cada grupo tiene ${per} personas, así que el ${per} va con ${V('g')}.`) }];
+    explain = L(`People on the elevator: ${per}${V('g')} + ${on}. “Fewer than” means less than: ${per}${V('g')} + ${on} < ${cap}.`, `Personas en el elevador: ${per}${V('g')} + ${on}. “Menos de” significa menor que: ${per}${V('g')} + ${on} < ${cap}.`);
+  }
+  return { kind: 'choice', long: true, html, options: shuffleOpts(opts), answerText: opts.find(o => o.ok).html, explain,
+    hint: L('“At most” is ≤, “at least” is ≥, “fewer than” or “less than” is <, and “more than” is >. Then check which number goes with the variable.',
+            '“Como máximo” es ≤, “por lo menos” es ≥, “menos de” es <, y “más de” es >. Luego revisa qué número va con la variable.') };
+};
+Q.ineqCheck = () => {
+  const s = pick(['<', '>', '<=', '>=']), a = pick([2, 3, 4, 5]), v = nz(-6, 6), b = nz(-10, 10), c = a * v + b;
+  const holds = t => ({ '<': a * t + b < c, '>': a * t + b > c, '<=': a * t + b <= c, '>=': a * t + b >= c })[s];
+  const right = s.includes('>') ? v + ri(1, 3) : v - ri(1, 3);
+  const pool = [v, v + (s.includes('>') ? -2 : 2), v + (s.includes('>') ? -4 : 4)];
+  const good = holds(v) ? (Math.random() < 0.5 ? v : right) : right;
+  const wrongs = [...new Set(pool.filter(t => !holds(t)))].slice(0, 3);
+  while (wrongs.length < 3) { const t = s.includes('>') ? v - ri(3, 9) : v + ri(3, 9); if (!holds(t) && !wrongs.includes(t)) wrongs.push(t); }
+  const op = opsFor(s), iq = `${term(a)}${plusC(b)} ${SYM[s]} ${num(c)}`;
+  const opts = [{ html: num(good), ok: true }, ...wrongs.map(t => ({ html: num(t),
+    msg: t === v ? L(`Substitute ${num(v)}: ${paren(a)}(${num(v)})${plusC(b)} = ${num(c)}. That makes both sides equal, but the inequality needs ${op.en} ${num(c)}${s.length > 1 ? '' : ', not equal'}.`,
+                     `Sustituye ${num(v)}: ${paren(a)}(${num(v)})${plusC(b)} = ${num(c)}. Eso hace que los dos lados sean iguales, pero la desigualdad necesita que sea ${op.es} ${num(c)}${s.length > 1 ? '' : ', no igual'}.`)
+      : L(`Substitute ${num(t)}: ${a}(${paren(t)})${plusC(b)} = ${num(a * t + b)}, which is not ${op.en} ${num(c)}.`, `Sustituye ${num(t)}: ${a}(${paren(t)})${plusC(b)} = ${num(a * t + b)}, que no es ${op.es} ${num(c)}.`) }))];
+  return { kind: 'choice', html: L(`Which value of ${V()} makes ${iq} true?`, `¿Qué valor de ${V()} hace que ${iq} sea verdadera?`), options: shuffleOpts(opts), answerText: num(good),
+    explain: L(`Substitute ${num(good)}: ${a}(${paren(good)})${plusC(b)} = ${num(a * good + b)}, which is ${op.en} ${num(c)}. True!`, `Sustituye ${num(good)}: ${a}(${paren(good)})${plusC(b)} = ${num(a * good + b)}, que es ${op.es} ${num(c)}. ¡Verdadera!`),
+    hint: L(`Try each choice: put it in for ${V()}, work out the left side, and compare it to ${num(c)}.`, `Prueba cada opción: ponla en lugar de ${V()}, resuelve el lado izquierdo y compáralo con ${num(c)}.`) };
+};
+
+/* =========================================================================
+   SKILL CATALOG. Each skill is one kind of problem, tagged with its TEKS.
+   topic: which zone's math it belongs to. tier: 1 = warm-up, 2 = on level, 3 = challenge.
+   label is English (also used on the teacher dashboard); es is the Spanish name students see.
+   Use these ids in CONFIG.focusSkills to make the game practice them more.
+   ========================================================================= */
+const SKILLS = [
+  { id: 'int-addsub', label: 'Adding and subtracting integers', es: 'Sumar y restar enteros', teks: '7.3A', topic: 'rational', tier: 1, gen: Q.intAddSub },
+  { id: 'int-muldiv', label: 'Multiplying and dividing integers', es: 'Multiplicar y dividir enteros', teks: '7.3A', topic: 'rational', tier: 1, gen: Q.intMulDiv },
+  { id: 'dec-ops', label: 'Operations with negative decimals', es: 'Operaciones con decimales negativos', teks: '7.3A', topic: 'rational', tier: 2, gen: Q.decimal },
+  { id: 'frac-addsub', label: 'Adding and subtracting fractions', es: 'Sumar y restar fracciones', teks: '7.3A', topic: 'rational', tier: 2, gen: Q.fracAddSub },
+  { id: 'order-ops', label: 'Order of operations with integers', es: 'Orden de las operaciones con enteros', teks: '7.3A', topic: 'rational', tier: 2, gen: Q.twoStep },
+  { id: 'dec-div', label: 'Dividing decimals', es: 'Dividir decimales', teks: '7.3A', topic: 'rational', tier: 2, gen: Q.decimalDiv },
+  { id: 'frac-muldiv', label: 'Multiplying and dividing fractions', es: 'Multiplicar y dividir fracciones', teks: '7.3A', topic: 'rational', tier: 3, gen: Q.fracMulDiv },
+  { id: 'rational-word', label: 'Rational number word problems', es: 'Problemas verbales con números racionales', teks: '7.3B', topic: 'rational', tier: 3, gen: Q.word },
+  { id: 'unit-rate', label: 'Unit rates', es: 'Tasas unitarias', teks: '7.4B', topic: 'proportion', tier: 1, gen: Q.unitRate },
+  { id: 'equiv-ratio', label: 'Equivalent ratios', es: 'Razones equivalentes', teks: '7.4D', topic: 'proportion', tier: 1, gen: Q.equivRatio },
+  { id: 'percent-benchmark', label: 'Benchmark percents (10%, 25%, 50%)', es: 'Porcentajes de referencia (10%, 25%, 50%)', teks: '7.4D', topic: 'proportion', tier: 1, gen: Q.easyPercent },
+  { id: 'constant-k', label: 'Constant of proportionality', es: 'Constante de proporcionalidad', teks: '7.4C', topic: 'proportion', tier: 2, gen: Q.constantK },
+  { id: 'percent-of', label: 'Percent of a number', es: 'Porcentaje de un número', teks: '7.4D', topic: 'proportion', tier: 2, gen: Q.percentOf },
+  { id: 'sales-tax', label: 'Sales tax', es: 'Impuesto sobre las ventas', teks: '7.4D', topic: 'proportion', tier: 2, gen: Q.salesTax },
+  { id: 'tip', label: 'Tips', es: 'Propinas', teks: '7.4D', topic: 'proportion', tier: 2, gen: Q.tip },
+  { id: 'scale', label: 'Scale drawings', es: 'Dibujos a escala', teks: '7.5C', topic: 'proportion', tier: 2, gen: Q.scale },
+  { id: 'convert', label: 'Converting units', es: 'Conversión de unidades', teks: '7.4E', topic: 'proportion', tier: 2, gen: Q.convert },
+  { id: 'percent-change', label: 'Percent increase and decrease', es: 'Porcentaje de aumento y disminución', teks: '7.4D', topic: 'proportion', tier: 3, gen: Q.percentChange },
+  { id: 'discount-tax', label: 'Discounts with tax', es: 'Descuentos con impuesto', teks: '7.4D', topic: 'proportion', tier: 3, gen: Q.discountTax },
+  { id: 'markup', label: 'Markups', es: 'Aumentos de precio', teks: '7.4D', topic: 'proportion', tier: 3, gen: Q.markup },
+  { id: 'frac-rate', label: 'Unit rates with fractions', es: 'Tasas unitarias con fracciones', teks: '7.4B', topic: 'proportion', tier: 3, gen: Q.fracRate },
+  { id: 'find-whole', label: 'Finding the whole from a percent', es: 'Hallar el total a partir de un porcentaje', teks: '7.4D', topic: 'proportion', tier: 3, gen: Q.findWhole },
+  { id: 'simple-interest', label: 'Simple interest', es: 'Interés simple', teks: '7.13E', topic: 'proportion', tier: 3, gen: Q.simpleInterest },
+  { id: 'eq-one-step', label: 'One-step equations', es: 'Ecuaciones de un paso', teks: '7.11A', topic: 'equations', tier: 1, gen: Q.eqOneStep },
+  { id: 'eq-check', label: 'Checking solutions to equations', es: 'Comprobar soluciones de ecuaciones', teks: '7.11B', topic: 'equations', tier: 1, gen: Q.eqCheck },
+  { id: 'eq-two-step', label: 'Two-step equations', es: 'Ecuaciones de dos pasos', teks: '7.11A', topic: 'equations', tier: 2, gen: Q.eqTwoStep },
+  { id: 'ineq-one-step', label: 'One-step inequalities', es: 'Desigualdades de un paso', teks: '7.11A', topic: 'equations', tier: 2, gen: Q.ineqOneStep },
+  { id: 'ineq-graph', label: 'Inequalities on a number line', es: 'Desigualdades en la recta numérica', teks: '7.10B', topic: 'equations', tier: 2, gen: Q.ineqGraph },
+  { id: 'eq-write', label: 'Writing equations from situations', es: 'Escribir ecuaciones a partir de situaciones', teks: '7.10A', topic: 'equations', tier: 2, gen: Q.eqWrite },
+  { id: 'ineq-two-step', label: 'Two-step inequalities', es: 'Desigualdades de dos pasos', teks: '7.11A', topic: 'equations', tier: 3, gen: Q.ineqTwoStep },
+  { id: 'eq-word', label: 'Equation word problems', es: 'Problemas verbales con ecuaciones', teks: '7.11A', topic: 'equations', tier: 3, gen: Q.eqWord },
+  { id: 'ineq-write', label: 'Writing inequalities from situations', es: 'Escribir desigualdades a partir de situaciones', teks: '7.10A', topic: 'equations', tier: 3, gen: Q.ineqWrite },
+  { id: 'ineq-check', label: 'Checking solutions to inequalities', es: 'Comprobar soluciones de desigualdades', teks: '7.11B', topic: 'equations', tier: 3, gen: Q.ineqCheck },
+];
+const SKILL = {}; SKILLS.forEach(s => (SKILL[s.id] = s));
+const skillsFor = (topic, tier) => SKILLS.filter(s => s.topic === topic && (tier == null || s.tier === tier));
+const skillName = sk => L(sk.label, sk.es);
+
+/* =========================================================================
+   QUESTION SELECTION. Within a topic and tier, the game leans toward:
+   your focus skills (CONFIG.focusSkills), skills this student is weak on, and skills they haven't tried yet.
+   Mastered skills still come up now and then for review.
+   ========================================================================= */
+let lastQ = '';
+function pickSkill(topic, tier) {
+  const pool = skillsFor(topic, tier);
+  if (!pool.length) return skillsFor(topic)[0];
+  const focus = CONFIG.focusSkills || [];
+  const weights = pool.map(s => {
+    const m = typeof skillMastery === 'function' ? skillMastery(s.id) : null;
+    let w = m == null ? 2 : 1 + (1 - m) * 2;          // untried: 2, weak: up to 3, mastered: 1
+    if (focus.includes(s.id)) w += 3;
+    return w;
+  });
+  let x = Math.random() * weights.reduce((a, b) => a + b, 0);
+  for (let i = 0; i < pool.length; i++) { x -= weights[i]; if (x <= 0) return pool[i]; }
+  return pool[pool.length - 1];
+}
+const SIGN_MSG = L('So close! The size of your answer is right, but the sign isn’t. Should the answer be positive or negative?',
+                   '¡Casi! El valor absoluto de tu respuesta es correcto, pero el signo no. ¿La respuesta debe ser positiva o negativa?');
+function makeQuestion(topic, tier, skillId = null) {
+  let q, sk, tries = 0;
+  do {
+    sk = skillId && SKILL[skillId] ? SKILL[skillId] : pickSkill(topic, tier);
+    q = sk.gen(); tries++;
+  } while (tx(q.html) === lastQ && tries < 6);
+  lastQ = tx(q.html);
+  q.skill = sk.id; q.teks = sk.teks; q.skillLabel = skillName(sk); q.topic = sk.topic;
+  q.hint = q.hint || L('Reread the problem and work it one step at a time.', 'Vuelve a leer el problema y resuélvelo paso por paso.');
+  q.kind = q.kind || 'number';
+  if (q.kind === 'number') {
+    // drop "mistakes" that happen to equal the real answer, and add the generic sign check
+    q.mistakes = (q.mistakes || []).filter(m => isFinite(m.v) && Math.abs(m.v - q.answer) > 0.006);
+    if (Math.abs(q.answer) > 0.006 && !q.mistakes.some(m => Math.abs(m.v + q.answer) <= 0.006)) q.mistakes.push(mk(-q.answer, SIGN_MSG));
+  } else q.mistakes = [];
+  // answer text as a pair: fractions read "(or 1 1/4)" in English and "(o 1 1/4)" in Spanish
+  if (typeof q.answerText === 'string') q.answerText = L(q.answerText, q.answerText.replace(' (or ', ' (o '));
+  return q;
+}
+function findMistake(q, input) {
+  const v = parseAnswer(input); if (isNaN(v)) return null;
+  const m = q.mistakes.find(m => Math.abs(m.v - v) <= 0.006);
+  return m ? m.msg : null;
+}
+/* One checker for every answer kind.
+   input: a typed string (number), { sym, text } (ineq), or { opt } (choice).
+   returns { valid, right, msg } where msg names the mistake when the game can tell. */
+function checkAnswer(q, input) {
+  if (q.kind === 'choice') {
+    const o = q.options[input.opt]; if (!o) return { valid: false };
+    return { valid: true, right: !!o.ok, msg: o.ok ? null : o.msg || null };
+  }
+  if (q.kind === 'ineq') {
+    const v = parseAnswer(input.text || '');
+    if (!input.sym || isNaN(v)) return { valid: false };
+    const A = q.answer, valOk = Math.abs(v - A.val) <= 0.006, symOk = input.sym === A.sym;
+    if (valOk && symOk) return { valid: true, right: true };
+    let msg = null;
+    if (valOk && (input.sym === flipSym(A.sym) || input.sym === strictSwap(flipSym(A.sym)))) msg = q.ineq.flip;
+    else if (valOk && input.sym === strictSwap(A.sym)) msg = q.ineq.strict;
+    else if (symOk && Math.abs(v + A.val) <= 0.006 && A.val !== 0) msg = L('The sign of your number is off. Should it be positive or negative?', 'El signo de tu número no es correcto. ¿Debe ser positivo o negativo?');
+    else if (symOk) msg = q.ineq.value;
+    return { valid: true, right: false, msg };
+  }
+  if (isNaN(parseAnswer(input))) return { valid: false };
+  return { valid: true, right: isRight(q.answer, input), msg: isRight(q.answer, input) ? null : findMistake(q, input) };
 }
 
-window.SpitzQ={ sets:SETS, forGame:forGame };
-})();
+/* ========================= answer checking ========================= */
+function parseAnswer(rawIn) {
+  let s = String(rawIn).toLowerCase()
+    .replace(/[\u2212\u2013\u2014]/g, '-')
+    .replace(/[$,%°]/g, '')
+    .replace(/[a-záéíóúñ]+/g, ' ')
+    .replace(/-\s+/g, '-')
+    .replace(/\s*\/\s*/g, '/')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (s.startsWith('+')) s = s.slice(1);
+  let m;
+  if (/^-?(\d+\.?\d*|\.\d+)$/.test(s)) return parseFloat(s);
+  if ((m = s.match(/^(-?)(\d+) (\d+)\/(\d+)$/))) {
+    const v = +m[2] + (+m[3] / +m[4]);
+    return +m[4] === 0 ? NaN : (m[1] ? -v : v);
+  }
+  if ((m = s.match(/^(-?\d*\.?\d+)\/(-?\d*\.?\d+)$/))) {
+    const d = parseFloat(m[2]);
+    return d === 0 ? NaN : parseFloat(m[1]) / d;
+  }
+  return NaN;
+}
+const isRight = (ans, input) => { const v = parseAnswer(input); return !isNaN(v) && Math.abs(v - ans) <= 0.006; };
